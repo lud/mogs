@@ -1,19 +1,20 @@
 defmodule Mogs.Board.Server do
-  use GenServer
+  use GenServer, restart: :transient
   require Logger
   require Record
   Record.defrecordp(:s, id: nil, mod: nil, board: nil)
+  import Mogs.Board, only: [bad_return: 4]
 
   # @todo allow to define the timeout from the `use Mogs.Board` call
-  @timeout 60000
+  @timeout 60_000
 
   def start_link(opts) when is_list(opts) do
     mod = Keyword.fetch!(opts, :mod)
     id = Keyword.fetch!(opts, :id)
     name = Keyword.fetch!(opts, :name)
     load_info = Keyword.fetch!(opts, :load_info)
-    Logger.debug(inspect(opts))
-    GenServer.start_link(__MODULE__, {mod, id, load_info}, name: name, debug: [:trace])
+    # debug: [:trace]
+    GenServer.start_link(__MODULE__, {mod, id, load_info}, name: name)
   end
 
   @impl true
@@ -37,7 +38,15 @@ defmodule Mogs.Board.Server do
 
   @impl true
   def handle_call({:read_board_state, fun}, _from, s(board: board) = state) do
-    {:reply, fun.(board), state}
+    {:reply, fun.(board), state, @timeout}
+  end
+
+  @impl true
+  def handle_call({:run_command, command}, _from, s(board: board, mod: mod) = state) do
+    case mod.handle_command(command, board) do
+      {:ok, reply, board} -> {:reply, reply, s(state, board: board), @timeout}
+      {:stop, reason, reply, board} -> {:stop, reason, reply, s(state, board: board)}
+    end
   end
 
   defp load_mode(mod) do
@@ -54,9 +63,5 @@ defmodule Mogs.Board.Server do
       {:error, _reason} = error -> error
       other -> bad_return(mod, :load, [id, load_info], other)
     end
-  end
-
-  defp bad_return(m, f, a, returned) do
-    {:error, {:bad_return, {m, f, a}, returned}}
   end
 end

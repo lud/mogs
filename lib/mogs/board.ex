@@ -3,6 +3,8 @@ defmodule Mogs.Board do
   @callback load_mode() :: :sync | :async
   @callback load(id :: any, load_info :: any) :: {:ok, board :: any} | {:error, reason :: any}
 
+  @type board :: any
+
   defmacro __using__(_opts) do
     board_mod = __CALLER__.module
     supervisor_name = Module.concat([board_mod, Supervisor])
@@ -45,43 +47,25 @@ defmodule Mogs.Board do
     Module.create(supervisor_name, supervisor_ast, Macro.Env.location(__CALLER__))
     Module.create(dynsup_name, dynsup_ast, Macro.Env.location(__CALLER__))
 
-    quote do
-      @behaviour Mogs.Board
+    # @todo remove location-keep
+    quote location: :keep do
+      @behaviour unquote(__MODULE__)
       # @todo On Elixir v2 before_compile check on genserver will be removed,
       # check why.
-      @before_compile Mogs.Board
+      @before_compile unquote(__MODULE__)
 
-      defp __via__(id) do
+      def __via__(id) do
         {:via, Registry, {unquote(registry_name), id}}
       end
 
       @doc false
-      def start_server(opts) do
-        # Any board server requires an ID
-        id =
-          case Keyword.fetch(opts, :id) do
-            {:ok, id} ->
-              id
+      def stop_server(id, reason \\ :normal, timeout \\ :infinity) do
+        GenServer.stop(__via__(id), reason, timeout)
+      end
 
-            :error ->
-              raise ArgumentError, "#{unquote(board_mod)}.start_server/1 requires an :id option"
-          end
-
-        # We set the name, module as defaults, a user that knows what she's
-        # doing can override at will. We also set a default load_info as the
-        # ID so it is easier to load the board state from an external source.
-        defaults = [
-          name: __via__(id),
-          mod: __MODULE__,
-          load_info: id
-        ]
-
-        opts1 = Keyword.merge(defaults, opts)
-
-        DynamicSupervisor.start_child(
-          unquote(dynsup_name),
-          {Mogs.Board.Server, opts1}
-        )
+      @doc false
+      def start_server(opts) when is_list(opts) do
+        unquote(__MODULE__).start_server(unquote(board_mod), unquote(dynsup_name), opts)
       end
 
       @doc false
@@ -89,13 +73,19 @@ defmodule Mogs.Board do
         :sync
       end
 
-      defoverridable load_mode: 0
-
       def read_state(id, fun) when is_function(fun, 1) do
-        GenServer.call(__via__(id), {:read_board_state, fun})
+        unquote(__MODULE__).read_state(__via__(id), fun)
       end
 
-      defoverridable read_state: 2
+      def send_command(id, command) do
+        unquote(__MODULE__).send_command(__via__(id), command)
+      end
+
+      def handle_command(command, board) do
+        unquote(__MODULE__).handle_command(command, board)
+      end
+
+      defoverridable load_mode: 0, read_state: 2, send_command: 2, handle_command: 2
     end
   end
 
@@ -126,5 +116,108 @@ defmodule Mogs.Board do
         defoverridable load: 2
       end
     end
+  end
+
+  def start_server(module, supervisor, opts) do
+    # Any board server requires an ID
+    id =
+      case Keyword.fetch(opts, :id) do
+        {:ok, id} ->
+          id
+
+        :error ->
+          raise ArgumentError, "#{module}.start_server/1 requires an :id option"
+      end
+
+    # We set the name, module as defaults, a user that knows what she's
+    # doing can override at will. We also set a default load_info as the
+    # ID so it is easier to load the board state from an external source.
+    defaults = [
+      name: module.__via__(id),
+      mod: module,
+      load_info: id
+    ]
+
+    opts1 = Keyword.merge(defaults, opts)
+
+    DynamicSupervisor.start_child(supervisor, {Mogs.Board.Server, opts1})
+  end
+
+  def read_state(name_or_pid, fun) do
+    GenServer.call(name_or_pid, {:read_board_state, fun})
+  end
+
+  # We do not check the format of the command as we could pass it to a custom
+  # handle_command function. It will fail server-side but send_command is
+  # overridable in the custom module.
+  def send_command(name_or_pid, command) do
+    GenServer.call(name_or_pid, {:run_command, command})
+  end
+
+  @doc """
+  Default implementation for handling commands.
+
+  Accepts to command styles : Structs and {Module, data}.
+
+  * If a struct is given, the struct module `run_command/2` function will be
+    called with the struct itself and the board as arguments.
+  * If a 2-tuple {module, data}, the module `run_command/2` will be called with
+    the data and the board as arguments
+  """
+  def handle_command(%struct_mod{} = command, board) do
+    do_run_command(struct_mod, :run_command, command, board)
+  end
+
+  def handle_command({module, data}, board) when is_atom(module) do
+    do_run_command(module, :run_command, data, board)
+  end
+
+  def handle_command(command, _board) do
+    raise ArgumentError, """
+
+      Bad command format. Default handle_command/2 implementation accepts
+      structs and {module, _data} tuples, and will call run_command/2 on the
+      given module.
+
+      Command received: #{inspect(command)}
+
+      It is possible to define a custom handle_command/2 function in you board
+      module to handle custom commands.
+    """
+  end
+
+  defp do_run_command(m, f, data, board) do
+    # We do not have much to do here. Just let the server crash
+
+    case apply(m, f, [data, board]) do
+      :ok ->
+        {:ok, :ok, board}
+
+      {:ok, board} ->
+        {:ok, :ok, board}
+
+      {:ok, reply, board} ->
+        {:ok, reply, board}
+
+      {:error, reason} ->
+        {:ok, {:error, reason}, board}
+
+      {:stop, reason} ->
+        {:stop, reason, :ok, board}
+
+      {:stop, reason, reply} ->
+        {:stop, reason, reply, board}
+
+      {:stop, reason, reply, board} ->
+        {:stop, reason, reply, board}
+
+      other ->
+        {:error, reason} = bad_return(m, f, [data, board], other)
+        {:stop, {:error, reason}, reason, board}
+    end
+  end
+
+  def bad_return(m, f, a, returned) do
+    {:error, {:bad_return, {m, f, a}, returned}}
   end
 end
