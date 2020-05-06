@@ -185,4 +185,16 @@ defmodule Mogs.Board do
       module to handle custom commands.
     """
   end
+
+  @doc """
+  Returns an empty timers structure to initialize timers in a board. This
+  structure will contain the timers that commands may set on the board.
+
+  The timers (implemented by the TimeQueue module) can be serialized (e.g with
+  term_to_binary)
+  """
+  @spec timers :: Mogs.Board.Timers.timers()
+  def timers() do
+    TimeQueue.new()
+  end
 end

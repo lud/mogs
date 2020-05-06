@@ -12,7 +12,6 @@ defmodule Mogs.Board.Command do
 
   @callback run(struct, Mogs.Board.board()) :: command_result
 
-  @todo "before_compile: check if a struct is defined"
   defmacro __using__(_) do
     quote do
       import Mogs.Board.Command.Result, only: [return: 1]
