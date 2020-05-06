@@ -1,35 +1,73 @@
 defmodule Mogs.Board.Command.Result do
-  defstruct continue: true, success: true, reply: :ok, error: nil, board: nil
+  defstruct continue: true, ok?: true, reply: nil, board: nil, stop_reason: :normal
 
-  @type t :: %__MODULE__{continue: boolean, success: boolean, reply: any, error: any, board: any}
+  @type t :: %__MODULE__{
+          continue: boolean,
+          ok?: boolean,
+          reply: any,
+          board: any,
+          stop_reason: any
+        }
 
   alias __MODULE__, as: M
+
+  @accepted_keys ~w(reply stop error board)a
 
   def return(keyword) do
     return(%__MODULE__{}, keyword)
   end
 
-  defp return(result, []) do
+  def return(result, return_info)
+
+  def return(result, []) do
     result
   end
 
-  defp return(result, [{k, v} | keyword]) do
+  def return(result, [{k, v} | keyword]) do
     return(add(result, k, v), keyword)
   end
 
-  defp add(result, :continue, cont?) when is_boolean(cont?) do
-    %M{result | continue: cont?}
+  defp add(result, :stop, true) do
+    %M{result | continue: false, stop_reason: :normal}
   end
 
-  defp add(result, :stop, cont?) when is_boolean(cont?) do
-    %M{result | continue: not cont?}
+  defp add(result, :stop, reason) do
+    %M{result | continue: false, stop_reason: reason}
   end
 
-  defp add(_, k, v) when is_atom(k) do
-    raise ArgumentError, "invalid return data: #{k}: #{inspect(v)}"
+  defp add(result, :board, board) do
+    %M{result | board: board}
+  end
+
+  defp add(result, :reply, reply) do
+    %M{result | reply: reply}
+  end
+
+  defp add(result, :error, reason) do
+    put_default_reply(%M{result | ok?: false}, {:error, reason})
+  end
+
+  defp add(_, k, v) when k in @accepted_keys do
+    raise ArgumentError, "invalid result value for #{k}: #{inspect(v)}"
   end
 
   defp add(_, k, _) do
-    raise ArgumentError, "invalid return key: #{inspect(k)}"
+    raise ArgumentError, "invalid result key: #{inspect(k)}"
+  end
+
+  defp put_default_reply(%M{reply: nil} = result, reply) do
+    %M{result | reply: reply}
+  end
+
+  defp put_default_reply(%M{} = result, _reply) do
+    result
+  end
+
+  def put_default_board(%M{board: nil} = result, board) do
+    %M{result | board: board}
+  end
+
+  def put_default_board(%M{} = result, _board) do
+    result
   end
 end

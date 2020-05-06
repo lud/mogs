@@ -22,8 +22,8 @@ defmodule Mogs.MixProject do
   defp deps do
     [
       # Utils
-      {:decompilerl, github: "niahoo/decompilerl", only: [:dev]},
-      {:credo, "~> 1.1", only: [:dev, :test], runtime: false}
+      {:decompilerl, github: "niahoo/decompilerl", only: [:dev]}
+      # {:credo, "~> 1.1", only: [:dev, :test], runtime: false}
     ]
   end
 end

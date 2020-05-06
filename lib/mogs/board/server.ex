@@ -3,7 +3,7 @@ defmodule Mogs.Board.Server do
   require Logger
   require Record
   Record.defrecordp(:s, id: nil, mod: nil, board: nil)
-  import Mogs.Board, only: [bad_return: 4]
+  alias Mogs.Board.Command.Result
 
   # @todo allow to define the timeout from the `use Mogs.Board` call
   @timeout 60_000
@@ -41,11 +41,15 @@ defmodule Mogs.Board.Server do
     {:reply, fun.(board), state, @timeout}
   end
 
+  @todo "Check result.ok? to tell if we write/broadcast the board"
   @impl true
   def handle_call({:run_command, command}, _from, s(board: board, mod: mod) = state) do
     case mod.handle_command(command, board) do
-      {:ok, reply, board} -> {:reply, reply, s(state, board: board), @timeout}
-      {:stop, reason, reply, board} -> {:stop, reason, reply, s(state, board: board)}
+      %Result{continue: true, reply: reply, board: board} ->
+        {:reply, reply, s(state, board: board), @timeout}
+
+      %Result{continue: false, reply: reply, board: board, stop_reason: reason} ->
+        {:stop, reason, reply, s(state, board: board)}
     end
   end
 
@@ -53,7 +57,7 @@ defmodule Mogs.Board.Server do
     case mod.load_mode() do
       :sync -> :sync
       :async -> :async
-      other -> bad_return(mod, :load_mode, [], other)
+      other -> {:bad_return, {mod, :load_mode, []}, other}
     end
   end
 
@@ -61,7 +65,7 @@ defmodule Mogs.Board.Server do
     case mod.load(id, load_info) do
       {:ok, board} -> {:ok, board}
       {:error, _reason} = error -> error
-      other -> bad_return(mod, :load, [id, load_info], other)
+      other -> {:bad_return, {mod, :load, [id, load_info]}, other}
     end
   end
 end

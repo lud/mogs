@@ -1,9 +1,10 @@
-defmodule MogsTest do
+defmodule Mogs.BoardTest do
   use ExUnit.Case
-  doctest Mogs
+  doctest Mogs.Board
 
   defmodule MyBoard do
     use Mogs.Board
+    import Mogs.Board.Command.Result
 
     def load_mode(), do: :async
 
@@ -11,16 +12,16 @@ defmodule MogsTest do
       {:ok, info}
     end
 
-    def run_command(:dummy, board) do
-      {:ok, board}
+    def handle_command(:dummy, board) do
+      return(reply: :ok, board: board)
     end
 
-    def run_command(:get_the_state, board) do
-      {:ok, board, board}
+    def handle_command(:get_the_state, board) do
+      return(reply: board, board: board)
     end
 
-    def run_command({:stop_me, reply}, _board) do
-      {:stop, :normal, reply}
+    def handle_command({:stop_me, reply}, board) do
+      return(reply: reply, board: board, stop: :normal)
     end
   end
 
@@ -53,18 +54,21 @@ defmodule MogsTest do
   test "can handle a tuple command" do
     id = :id_2
     assert {:ok, pid} = MyBoard.start_server(id: id, load_info: :some_state)
-    assert :ok = MyBoard.send_command(id, {MyBoard, :dummy})
-    assert :some_state = MyBoard.send_command(id, {MyBoard, :get_the_state})
+    assert :ok = MyBoard.send_command(id, :dummy)
+    assert :some_state = MyBoard.send_command(id, :get_the_state)
     assert true === Process.alive?(pid)
-    assert :bye = MyBoard.send_command(id, {MyBoard, {:stop_me, :bye}})
+    assert :bye = MyBoard.send_command(id, {:stop_me, :bye})
     assert false === Process.alive?(pid)
   end
 
   defmodule ComBoard do
     use Mogs.Board
-    @behaviour Mogs.Board.Command
 
     defstruct var1: nil
+
+    def load(_id, load_info) do
+      {:ok, load_info}
+    end
   end
 
   setup_all do
@@ -72,12 +76,39 @@ defmodule MogsTest do
     :ok
   end
 
-  defmodule Com1 do
+  defmodule TransformState do
+    use Mogs.Board.Command
+    defstruct trans: nil
+
+    def run(%{trans: fun}, board) do
+      return(board: fun.(board))
+    end
+  end
+
+  defmodule TransformReply do
+    use Mogs.Board.Command
+    defstruct trans: nil
+
+    def run(%{trans: fun}, board) do
+      return(reply: fun.(board))
+    end
   end
 
   test "can handle a struct command" do
     id = :id_3
     assert {:ok, pid} = ComBoard.start_server(id: id, load_info: :some_state)
-    assert "SOME_STATE" = ComBoard.send_command(id, %ComBoard{})
+
+    assert nil ===
+             ComBoard.send_command(id, %TransformState{
+               trans: fn board -> board |> to_string |> String.upcase() end
+             })
+
+    assert "SOME_STATE" = ComBoard.read_state(id)
+
+    assert ["SOME", "STATE"] ===
+             ComBoard.send_command(id, %TransformReply{trans: &String.split(&1, "_")})
+
+    # A command that does not return(board: ...) should keep the orginal board
+    assert "SOME_STATE" = ComBoard.read_state(id)
   end
 end

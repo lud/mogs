@@ -73,6 +73,10 @@ defmodule Mogs.Board do
         :sync
       end
 
+      def read_state(id) do
+        read_state(id, fn state -> state end)
+      end
+
       def read_state(id, fun) when is_function(fun, 1) do
         unquote(__MODULE__).read_state(__via__(id), fun)
       end
@@ -164,60 +168,21 @@ defmodule Mogs.Board do
   * If a 2-tuple {module, data}, the module `run_command/2` will be called with
     the data and the board as arguments
   """
-  def handle_command(%struct_mod{} = command, board) do
-    do_run_command(struct_mod, :run_command, command, board)
-  end
-
-  def handle_command({module, data}, board) when is_atom(module) do
-    do_run_command(module, :run_command, data, board)
+  def handle_command(%_{} = command, board) do
+    Mogs.Board.Command.run_command(command, board)
   end
 
   def handle_command(command, _board) do
     raise ArgumentError, """
 
-      Bad command format. Default handle_command/2 implementation accepts
-      structs and {module, _data} tuples, and will call run_command/2 on the
-      given module.
+      Bad command format. Default handle_command/2 implementation only accepts
+      struct commands and will call Mogs.Board.Command.run_command/2 with the
+      given struct and board.
 
       Command received: #{inspect(command)}
 
       It is possible to define a custom handle_command/2 function in you board
       module to handle custom commands.
     """
-  end
-
-  defp do_run_command(m, f, data, board) do
-    # We do not have much to do here. Just let the server crash
-
-    case apply(m, f, [data, board]) do
-      :ok ->
-        {:ok, :ok, board}
-
-      {:ok, board} ->
-        {:ok, :ok, board}
-
-      {:ok, reply, board} ->
-        {:ok, reply, board}
-
-      {:error, reason} ->
-        {:ok, {:error, reason}, board}
-
-      {:stop, reason} ->
-        {:stop, reason, :ok, board}
-
-      {:stop, reason, reply} ->
-        {:stop, reason, reply, board}
-
-      {:stop, reason, reply, board} ->
-        {:stop, reason, reply, board}
-
-      other ->
-        {:error, reason} = bad_return(m, f, [data, board], other)
-        {:stop, {:error, reason}, reason, board}
-    end
-  end
-
-  def bad_return(m, f, a, returned) do
-    {:error, {:bad_return, {m, f, a}, returned}}
   end
 end
