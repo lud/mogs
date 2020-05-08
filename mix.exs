@@ -26,10 +26,10 @@ defmodule Mogs.MixProject do
       {:time_queue, ">= 0.5.0"},
 
       # Utils
+      {:dialyxir, ">= 0.0.0", only: [:dev], runtime: false},
       {:decompilerl, github: "niahoo/decompilerl", only: [:dev]},
-      {:ex_doc, ">= 0.0.0", only: [:dev], runtime: false}
-      # {:credo, "~> 1.1", only: [:dev, :test], runtime: false},
-      # {:dialyxir, ">= 0.0.0", only: [:dev], runtime: false},
+      {:ex_doc, ">= 0.0.0", only: [:dev], runtime: false},
+      {:credo, "~> 1.1", only: [:dev, :test], runtime: false},
     ]
   end
 end

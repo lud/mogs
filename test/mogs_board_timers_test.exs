@@ -1,7 +1,7 @@
 defmodule Mogs.TimersTest do
   use ExUnit.Case
-  alias Mogs.Timers
   alias Mogs.Board
+  alias Mogs.Timers
 
   defmodule NoTimers do
     defstruct a: 0, b: 0
