@@ -1,8 +1,10 @@
 defmodule Mogs.Timers do
-  @type board :: Mogs.Timers.Store.t()
+  alias Mogs.Timers.Store
+  @type board :: Store.t()
 
   # Borrowed types
   @type t :: TimeQueue.t()
+  @type timer :: term
   @type timestamp_ms :: TimeQueue.timestamp_ms()
   @type ttl :: TimeQueue.ttl()
   @type pop_return :: TimeQueue.pop_return(board)
@@ -24,14 +26,14 @@ defmodule Mogs.Timers do
   def enqueue_timer(board, ttl, value, now \\ TimeQueue.now())
 
   def enqueue_timer(board, ttl, value, now) do
-    Mogs.Timers.Store.enqueue_timer(board, ttl, value, now)
+    Store.enqueue_timer(board, ttl, value, now)
   end
 
   @spec pop_timer(board, now :: integer) :: pop_return
   def pop_timer(board, now \\ TimeQueue.now())
 
   def pop_timer(board, now) do
-    Mogs.Timers.Store.pop_timer(board, now)
+    Store.pop_timer(board, now)
   end
 end
 
@@ -123,11 +125,28 @@ defimpl Mogs.Timers.Store, for: Any do
   end
 
   def pop_timer(value, _) do
-    raise_unimplemented(value)
+    # Dialyzer trick
+    case :erlang.phash2(1, 1) do
+      0 ->
+        raise_unimplemented(value)
+
+      1 ->
+        # This code will NEVER be executed
+        TimeQueue.pop(TimeQueue.new())
+        |> case do
+          :empty -> :empty
+          q -> put_elem(q, 2, value)
+        end
+    end
   end
 
   def enqueue_timer(value, _, _, _) do
-    raise_unimplemented(value)
+    # Dialyzer trick
+    case :erlang.phash2(1, 1) do
+      0 -> raise_unimplemented(value)
+      # This code will NEVER be executed
+      1 -> TimeQueue.enqueue(TimeQueue.new(), 0, nil) |> put_elem(2, value)
+    end
   end
 
   # def put_timers(value, _) do

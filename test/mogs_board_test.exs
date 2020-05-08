@@ -2,6 +2,21 @@ defmodule Mogs.BoardTest do
   use ExUnit.Case
   doctest Mogs.Board
 
+  # Unlike assert_receive that awaits a message matching pattern,
+  # assert_next_receive will match the pattern against the first message
+  # received. Used to check order of messages
+  defmacro assert_next_receive(pattern, timeout \\ 1000) do
+    quote do
+      receive do
+        message ->
+          assert unquote(pattern) = message
+      after
+        unquote(timeout) ->
+          raise "timeout"
+      end
+    end
+  end
+
   defmodule MyBoard do
     use Mogs.Board
     import Mogs.Board.Command.Result
@@ -129,9 +144,11 @@ defmodule Mogs.BoardTest do
     defstruct test_pid: nil
 
     def run(%{test_pid: pid}, board) do
-      {:ok, board} = start_timer(board, {100, :ms}, {pid, :timer_1})
-      {:ok, board} = start_timer(board, {200, :ms}, {pid, :timer_2})
+      # reverse ttl order
       {:ok, board} = start_timer(board, {300, :ms}, {pid, :timer_3})
+      {:ok, board} = start_timer(board, {200, :ms}, {pid, :timer_2})
+      {:ok, board} = start_timer(board, {100, :ms}, {pid, :timer_1})
+      {:ok, board} = start_timer(board, {999_999, :ms}, {pid, :timer_9999})
 
       return(board: board)
     end
@@ -150,10 +167,17 @@ defmodule Mogs.BoardTest do
   test "a command can set a timer and handle it" do
     id = :id_3
     assert {:ok, pid} = TimedBoard.start_server(id: id, load_info: :some_state, timers: true)
+    assert pid === GenServer.whereis(TimedBoard.__via__(id))
     TimedBoard.send_command(id, %SetTimer{test_pid: self()})
-    assert_receive({:handled!, timer_1}, 1000)
-    assert_receive({:handled!, timer_2}, 1000)
-    assert_receive({:handled!, timer_3}, 1000)
+
+    assert_next_receive({:handled!, :timer_1}, 1000)
+    assert_next_receive({:handled!, :timer_2}, 1000)
+    assert_next_receive({:handled!, :timer_3}, 1000)
+
+    TimedBoard.read_state(id, fn board ->
+      assert 1 = TimeQueue.size(board.timers)
+    end)
+
     Process.sleep(100)
   end
 end

@@ -1,4 +1,5 @@
 defmodule Mogs.Board do
+  alias Mogs.Board.Command
   alias Supervisor, as: OTPSupervisor
   @callback load_mode() :: :sync | :async
   @callback load(id :: any, load_info :: any) :: {:ok, board :: any} | {:error, reason :: any}
@@ -170,7 +171,7 @@ defmodule Mogs.Board do
 
   @doc false
   def __handle_command__(%_{} = command, board) do
-    Mogs.Board.Command.run_command(command, board)
+    Command.run_command(command, board)
   end
 
   def __handle_command__(command, _board) do
