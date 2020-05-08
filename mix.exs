@@ -23,12 +23,13 @@ defmodule Mogs.MixProject do
   defp deps do
     [
       # Depts
-      {:time_queue, ">= 0.3.0"},
+      {:time_queue, ">= 0.5.0"},
 
       # Utils
       {:decompilerl, github: "niahoo/decompilerl", only: [:dev]},
-      # {:credo, "~> 1.1", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: [:dev], runtime: false}
+      # {:credo, "~> 1.1", only: [:dev, :test], runtime: false},
+      # {:dialyxir, ">= 0.0.0", only: [:dev], runtime: false},
     ]
   end
 end

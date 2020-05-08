@@ -1,28 +1,59 @@
-defprotocol Mogs.Board.Timers do
-  # Mogs types
-  @type t :: term
-  @type timer :: {handler :: module, data :: term}
+defmodule Mogs.Timers do
+  @type board :: Mogs.Timers.Store.t()
 
   # Borrowed types
-  @type timers :: TimeQueue.t()
+  @type t :: TimeQueue.t()
   @type timestamp_ms :: TimeQueue.timestamp_ms()
   @type ttl :: TimeQueue.ttl()
-  @type pop_return :: TimeQueue.pop_return(t)
-  @type enqueue_return :: TimeQueue.enqueue_return(t)
+  @type pop_return :: TimeQueue.pop_return(board)
+  @type enqueue_return :: TimeQueue.enqueue_return(board)
+
+  @doc """
+  Returns an empty timers structure to initialize timers in a board. This
+  structure will contain the timers that commands may set on the board.
+
+  The timers (implemented by the TimeQueue module) can be serialized (e.g with
+  term_to_binary)
+  """
+  @spec new :: Mogs.Timers.t()
+  def new() do
+    TimeQueue.new()
+  end
+
+  @spec enqueue_timer(board, ttl, value :: any, now :: integer) :: enqueue_return
+  def enqueue_timer(board, ttl, value, now \\ TimeQueue.now())
+
+  def enqueue_timer(board, ttl, value, now) do
+    Mogs.Timers.Store.enqueue_timer(board, ttl, value, now)
+  end
+
+  @spec pop_timer(board, now :: integer) :: pop_return
+  def pop_timer(board, now \\ TimeQueue.now())
+
+  def pop_timer(board, now) do
+    Mogs.Timers.Store.pop_timer(board, now)
+  end
+end
+
+defprotocol Mogs.Timers.Store do
+  alias Mogs.Timers
+  # Mogs types
+  @type t :: term
 
   @fallback_to_any true
 
-  @spec pop_timer(t, now :: timestamp_ms()) :: pop_return
+  @spec pop_timer(t, now :: Timers.timestamp_ms()) :: Timers.pop_return()
   def pop_timer(board, now)
 
-  @spec enqueue_timer(t, ttl, timer, now :: timestamp_ms()) :: enqueue_return
+  @spec enqueue_timer(t, Timers.ttl(), Timers.timer(), now :: Timers.timestamp_ms()) ::
+          Timers.enqueue_return()
   def enqueue_timer(board, ttl, timer, now)
 
   # @spec put_timers(t, timers) :: t
   # def put_timers(board, timers)
 end
 
-defimpl Mogs.Board.Timers, for: Any do
+defimpl Mogs.Timers.Store, for: Any do
   defmacro __deriving__(module, struct, options) do
     case find_key(struct, options) do
       {:raise, exception, message} ->
@@ -34,13 +65,13 @@ defimpl Mogs.Board.Timers, for: Any do
 
       {:ok, key} ->
         quote do
-          defimpl Mogs.Board.Timers, for: unquote(module) do
-            @type timestamp_ms :: Mogs.Board.Timers.timestamp_ms()
-            @type timers :: Mogs.Board.Timers.timers()
-            @type timer :: Mogs.Board.Timers.timer()
-            @type ttl :: Mogs.Board.Timers.ttl()
-            @type pop_return :: Mogs.Board.Timers.pop_return()
-            @type enqueue_return :: Mogs.Board.Timers.enqueue_return()
+          defimpl unquote(@protocol), for: unquote(module) do
+            @type timestamp_ms :: Mogs.Timers.timestamp_ms()
+            @type timers :: Mogs.Timers.t()
+            @type timer :: Mogs.Timers.timer()
+            @type ttl :: Mogs.Timers.ttl()
+            @type pop_return :: Mogs.Timers.pop_return()
+            @type enqueue_return :: Mogs.Timers.enqueue_return()
             @type impl :: %{:__struct__ => unquote(module), unquote(key) => timers}
 
             @spec pop_timer(impl, now :: timestamp_ms) :: pop_return
@@ -58,11 +89,6 @@ defimpl Mogs.Board.Timers, for: Any do
 
               {:ok, tref, Map.put(board, unquote(key), tq)}
             end
-
-            # @spec put_timers(impl, timers) :: impl
-            # def put_timers(board, timers) do
-            #   Mogs.Board.put_timers(board, unquote(key), timers)
-            # end
           end
         end
     end
@@ -80,7 +106,7 @@ defimpl Mogs.Board.Timers, for: Any do
 
         defmodule #{inspect(name)} do
           @derive {#{@protocol}, key: my_key}
-          defstruct my_key: Mogs.Board.timers()
+          defstruct my_key: Mogs.timers()
 
       If you don't own the struct you may use Protocol.derive/3 placed outside \
       of any module:
@@ -122,9 +148,9 @@ defimpl Mogs.Board.Timers, for: Any do
       :error ->
         {:raise, ArgumentError,
          """
-         A :key option is required when deriving Mogs.Board.Timers:
-           @derive {Mogs.Board.Timers, key: :my_key}
-           defstruct my_key: Mogs.Board.timers(), other_key: …
+         A :key option is required when deriving Mogs.Timers:
+           @derive {Mogs.Timers.Store, key: :my_key}
+           defstruct my_key: Mogs.timers(), other_key: …
          """}
     end
   end

@@ -58,6 +58,7 @@ defmodule Mogs.BoardTest do
     assert :some_state = MyBoard.send_command(id, :get_the_state)
     assert true === Process.alive?(pid)
     assert :bye = MyBoard.send_command(id, {:stop_me, :bye})
+    Process.sleep(100)
     assert false === Process.alive?(pid)
   end
 
@@ -110,5 +111,49 @@ defmodule Mogs.BoardTest do
 
     # A command that does not return(board: ...) should keep the orginal board
     assert "SOME_STATE" = ComBoard.read_state(id)
+  end
+
+  defmodule TimedBoard do
+    use Mogs.Board
+
+    @derive {Mogs.Timers.Store, :timers}
+    defstruct var1: nil, timers: Mogs.Timers.new()
+
+    def load(_id, _load_info) do
+      {:ok, %__MODULE__{}}
+    end
+  end
+
+  defmodule SetTimer do
+    use Mogs.Board.Command
+    defstruct test_pid: nil
+
+    def run(%{test_pid: pid}, board) do
+      {:ok, board} = start_timer(board, {100, :ms}, {pid, :timer_1})
+      {:ok, board} = start_timer(board, {200, :ms}, {pid, :timer_2})
+      {:ok, board} = start_timer(board, {300, :ms}, {pid, :timer_3})
+
+      return(board: board)
+    end
+
+    def handle_timer({pid, name}, board) do
+      send(pid, {:handled!, name})
+      return(board: board)
+    end
+  end
+
+  setup_all do
+    start_supervised!(TimedBoard.Supervisor)
+    :ok
+  end
+
+  test "a command can set a timer and handle it" do
+    id = :id_3
+    assert {:ok, pid} = TimedBoard.start_server(id: id, load_info: :some_state, timers: true)
+    TimedBoard.send_command(id, %SetTimer{test_pid: self()})
+    assert_receive({:handled!, timer_1}, 1000)
+    assert_receive({:handled!, timer_2}, 1000)
+    assert_receive({:handled!, timer_3}, 1000)
+    Process.sleep(100)
   end
 end
