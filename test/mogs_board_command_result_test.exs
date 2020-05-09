@@ -1,5 +1,5 @@
 defmodule Mogs.Board.Command.ResultTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   alias Mogs.Board.Command.Result
   doctest Result
   import Result, only: [return: 1, return: 2], warn: false

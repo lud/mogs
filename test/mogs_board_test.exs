@@ -1,9 +1,7 @@
 defmodule Mogs.BoardTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   doctest Mogs.Board
 
-  # change a seed whenever we compile/run the test to use different values in database.
-  @seed :os.system_time(:millisecond)
   @db __MODULE__.DB
 
   # Unlike assert_receive that awaits a message matching pattern,
@@ -157,29 +155,18 @@ defmodule Mogs.BoardTest do
       return(board: board)
     end
 
-    def handle_timer({regname, name}, board) do
-      case Process.whereis(regname) do
-        pid when is_pid(pid) ->
-          send(pid, {:handled!, name})
-          return(board: board)
-
-        _ ->
-          raise "Could not find pid for name #{inspect(regname)}"
-      end
+    def handle_timer({pid, name}, board) do
+      send(pid, {:handled!, name})
+      return(board: board)
     end
   end
 
   test "a command can set a timer and handle it" do
-    # We will not send a pid since after a test restard when we do not
-    # want to nuke the DB (which is bad), the pid is assigned to a
-    # random process that does not like to receive timers :D
-    Process.register(self, __MODULE__.TimerCommandReceiver)
-
     id = __ENV__.line
     assert {:ok, pid} = TimedBoard.start_server(id: id, load_info: :some_state, timers: true)
     assert pid === GenServer.whereis(TimedBoard.__via__(id))
 
-    TimedBoard.send_command(id, %SetTimer{test_pid: __MODULE__.TimerCommandReceiver})
+    TimedBoard.send_command(id, %SetTimer{test_pid: self()})
 
     assert_next_receive({:handled!, :timer_1}, 1000)
     assert_next_receive({:handled!, :timer_2}, 1000)
@@ -189,39 +176,27 @@ defmodule Mogs.BoardTest do
       assert 0 = TimeQueue.size(board.timers)
     end)
 
-    Process.unregister(__MODULE__.TimerCommandReceiver)
+    # sync_cub()
   end
 
-  test "a board can stop and restart and still handle timers", context do
-    # See above
-    Process.register(self, __MODULE__.TimerCommandReceiverRevive)
-
+  test "a board can stop and restart and still handle timers" do
     id = __ENV__.line
     assert {:ok, pid} = TimedBoard.start_server(id: id, load_info: :some_state, timers: true)
-    TimedBoard.send_command(id, %SetTimer{test_pid: __MODULE__.TimerCommandReceiverRevive})
+    TimedBoard.send_command(id, %SetTimer{test_pid: self()})
     pid = GenServer.whereis(TimedBoard.__via__(id))
     # We will kill the board, and still expect to receive our timers,
     # as the timers data (our pid) must be stored in the state.
     # But that works only because the board has a persistence storage.
     Process.exit(pid, :kill)
 
-    # After a reload of the persisted state, we expect the server to
-    # run a lifecyle loop and call our timers
+    # After beeing restated by the supervisor and loading the
+    # persisted state, we expect the server to run a lifecyle loop and
+    # call our timers
     assert_receive({:handled!, :timer_1}, 1000)
     assert_receive({:handled!, :timer_2}, 1000)
     assert_receive({:handled!, :timer_3}, 1000)
 
-    Process.unregister(__MODULE__.TimerCommandReceiverRevive)
-  end
-
-  defp flush_handlers() do
-    receive do
-      {:handled!, _} = msg ->
-        IO.inspect(msg)
-        flush_handlers()
-    after
-      10000 -> IO.puts("NO MSG")
-    end
+    # sync_cub()
   end
 
   setup_all do
@@ -236,17 +211,19 @@ defmodule Mogs.BoardTest do
     start_supervised!(ComBoard.Supervisor)
     start_supervised!(MyBoard.Supervisor)
     start_supervised!(TimedBoard.Supervisor)
-    {:ok, cub} = CubDB.start_link(db_dir, name: @db)
-
-    Task.await(
-      Task.async(fn ->
-        CubDB.subscribe(cub)
-        CubDB.compact(cub)
-        assert_receive :compaction_completed
-        assert_receive :catch_up_completed
-      end)
-    )
+    {:ok, _} = CubDB.start_link(db_dir, name: @db)
 
     :ok
   end
+
+  # defp sync_cub() do
+  #   Task.await(
+  #     Task.async(fn ->
+  #       CubDB.subscribe(@db)
+  #       CubDB.compact(@db)
+  #       assert_receive :compaction_completed
+  #       assert_receive :catch_up_completed
+  #     end)
+  #   )
+  # end
 end

@@ -118,7 +118,7 @@ defmodule Mogs.Board.Server do
 
     case apply(mod, callback, args) do
       {:ok, board} -> {:noreply, s(state, board: board), {:continue, :lifecycle}}
-      {:stop, reason} -> {:stop, result.reason, s(state, board: result.board)}
+      {:stop, reason} -> {:stop, reason, s(state, board: result.board)}
     end
   end
 

@@ -1,5 +1,5 @@
 defmodule Mogs.Players.TrackerTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   alias Mogs.Players.Tracker
 
   test "a tracker will exit when its client exits" do
@@ -42,10 +42,6 @@ defmodule Mogs.Players.TrackerTest do
       Process.exit(player_1, :kill)
     end
 
-    :erlang.process_info(self(), :messages)
-    |> IO.inspect()
-
-    # 
     receive do
       msg -> flunk("Received unexpected message: #{inspect(msg)}")
     after

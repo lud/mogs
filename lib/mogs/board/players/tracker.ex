@@ -118,7 +118,7 @@ defmodule Mogs.Players.Tracker do
   end
 
   # A tracked process is down
-  def handle_info({:DOWN, ref, :process, pid, _}, s(m2p: m2p) = state)
+  def handle_info({:DOWN, ref, :process, _pid, _}, s(m2p: m2p) = state)
       when is_map_key(m2p, ref) do
     s(m2p: m2p, p2ms: p2ms, p2tref: p2tref, ptimeout: delay) = state
     {player_id, m2p} = Map.pop(m2p, ref)
@@ -156,7 +156,7 @@ defmodule Mogs.Players.Tracker do
     # in our state it means the player was not tracked since we
     # started the timer, so the player actually left
     p2tref = Map.delete(p2tref, player_id)
-    p2ms = Map.delete(p2tref, player_id)
+    p2ms = Map.delete(p2ms, player_id)
     state = s(state, p2tref: p2tref, p2ms: p2ms)
     # We will inform the client that the player left
     send(client_pid, {__MODULE__, :player_timeout, player_id})
@@ -168,8 +168,8 @@ defmodule Mogs.Players.Tracker do
     {:noreply, state, @hibernate_timeout}
   end
 
-  def handle_info({:DOWN, ref, :process, pid, _}, s(m2p: m2p) = state) do
-    # Monitor ref is unknown 
+  def handle_info({:DOWN, ref, :process, pid, _}, state) do
+    # Monitor ref is unknown
     Logger.error("Unknown monitor reference: #{inspect(ref)} pid: #{inspect(pid)}")
     {:noreply, state, @hibernate_timeout}
   end
@@ -179,6 +179,7 @@ defmodule Mogs.Players.Tracker do
   end
 
   def handle_info(msg, state) do
-    raise "Unhandled info #{inspect(msg)} when s"
+    Logger.error("Unhandled info in #{__MODULE__}: #{inspect(msg)}")
+    {:noreply, state}
   end
 end

@@ -1,6 +1,5 @@
 defmodule Mogs.TimersTest do
-  use ExUnit.Case
-  alias Mogs.Board
+  use ExUnit.Case, async: true
   alias Mogs.Timers
 
   defmodule NoTimers do
