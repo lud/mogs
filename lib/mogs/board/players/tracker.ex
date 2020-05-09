@@ -53,7 +53,7 @@ defmodule Mogs.Players.Tracker do
     IO.inspect(opts, label: "START_LINK OPTS")
 
     with {:ok, opts} <- KeywordValidator.validate(opts, @opts_schema) do
-      GenServer.start_link(__MODULE__, opts, debug: [:trace])
+      GenServer.start_link(__MODULE__, opts, debug: [])
     end
   end
 

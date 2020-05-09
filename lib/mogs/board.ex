@@ -134,7 +134,6 @@ defmodule Mogs.Board do
   end
 
   def start_server(module, supervisor, opts) do
-    # Any board server requires an ID
     id =
       case Keyword.fetch(opts, :id) do
         {:ok, id} ->
@@ -144,18 +143,17 @@ defmodule Mogs.Board do
           raise ArgumentError, "#{module}.start_server/1 requires an :id option"
       end
 
-    # We set the name, module as defaults, a user that knows what she's
-    # doing can override at will. We also set a default load_info as the
-    # ID so it is easier to load the board state from an external source.
-    defaults = [
-      name: module.__via__(id),
-      mod: module,
-      load_info: id
-    ]
+    opts_schema = %{
+      id: [required: true],
+      name: [default: module.__via__(id)],
+      mod: [default: module],
+      load_info: [default: id],
+      timers: [type: :boolean, default: false]
+    }
 
-    opts1 = Keyword.merge(defaults, opts)
-
-    DynamicSupervisor.start_child(supervisor, {Mogs.Board.Server, opts1})
+    with {:ok, opts} <- KeywordValidator.validate(opts, opts_schema) do
+      DynamicSupervisor.start_child(supervisor, {Mogs.Board.Server, opts})
+    end
   end
 
   def read_state(name_or_pid, fun) do
