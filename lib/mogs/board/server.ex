@@ -154,9 +154,20 @@ defmodule Mogs.Board.Server do
   #
   # Currently we only have one function
   defp do_lifecycle(state) do
-    with :unhandled <- lf_run_next_timer(state) do
-      {:noreply, state, @timeout}
-    else
+    # Syntax with multiple lifetime functions:
+    # with :unhandled <- lf_run_next_timer(state),
+    #      :unhandled <- fun_2(state),
+    #      :unhandled <- fun_3(state),
+    #      :unhandled <- fun_4(state),
+    #      :unhandled <- fun_5(state) do
+    #   {:noreply, state, @timeout}
+    # else
+    #   {:handled, gen_tuple_reply} -> gen_tuple_reply
+    # end
+
+    # Make credo happy and use a case
+    case lf_run_next_timer(state) do
+      :unhandled -> {:noreply, state, @timeout}
       {:handled, gen_tuple_reply} -> gen_tuple_reply
     end
   end

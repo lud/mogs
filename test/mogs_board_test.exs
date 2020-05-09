@@ -38,7 +38,15 @@ defmodule Mogs.BoardTest do
     end
 
     def handle_command({:stop_me, reply}, board) do
-      return(reply: reply, board: board, stop: :normal)
+      return(reply: reply, board: :GOT_TO_STOP)
+    end
+
+    def handle_update(:GOT_TO_STOP) do
+      {:stop, :normal}
+    end
+
+    def handle_update(board) do
+      {:ok, board}
     end
   end
 
@@ -63,16 +71,16 @@ defmodule Mogs.BoardTest do
     assert "HELLO" = MyBoard.read_state(:id_1, &String.upcase/1)
   end
 
-  # test "can handle a tuple command" do
-  #   id = :id_2
-  #   assert {:ok, pid} = MyBoard.start_server(id: id, load_info: :some_state)
-  #   assert :ok = MyBoard.send_command(id, :dummy)
-  #   assert :some_state = MyBoard.send_command(id, :get_the_state)
-  #   assert true === Process.alive?(pid)
-  #   assert :bye = MyBoard.send_command(id, {:stop_me, :bye})
-  #   Process.sleep(100)
-  #   assert false === Process.alive?(pid)
-  # end
+  test "can handle a tuple command" do
+    id = :id_2
+    assert {:ok, pid} = MyBoard.start_server(id: id, load_info: :some_state)
+    assert :ok = MyBoard.send_command(id, :dummy)
+    assert :some_state = MyBoard.send_command(id, :get_the_state)
+    assert true === Process.alive?(pid)
+    assert :bye = MyBoard.send_command(id, {:stop_me, :bye})
+    Process.sleep(100)
+    assert false === Process.alive?(pid)
+  end
 
   defmodule ComBoard do
     use Mogs.Board
@@ -202,11 +210,11 @@ defmodule Mogs.BoardTest do
   setup_all do
     db_dir = "test/db/#{__MODULE__}"
 
-    # case File.rm_rf(db_dir) do
-    #   {:ok, _} -> :ok
-    #   {:error, :enoent} -> :ok
-    #   other -> raise "Could not cleanup test db: #{inspect(other)}"
-    # end
+    case File.rm_rf(db_dir) do
+      {:ok, _} -> :ok
+      {:error, :enoent} -> :ok
+      other -> raise "Could not cleanup test db: #{inspect(other)}"
+    end
 
     start_supervised!(ComBoard.Supervisor)
     start_supervised!(MyBoard.Supervisor)
