@@ -2,6 +2,10 @@ defmodule Mogs.BoardTest do
   use ExUnit.Case
   doctest Mogs.Board
 
+  # change a seed whenever we compile/run the test to use different values in database.
+  @seed :os.system_time(:millisecond)
+  @db __MODULE__.DB
+
   # Unlike assert_receive that awaits a message matching pattern,
   # assert_next_receive will match the pattern against the first message
   # received. Used to check order of messages
@@ -40,16 +44,11 @@ defmodule Mogs.BoardTest do
     end
   end
 
-  setup_all do
-    start_supervised!(MyBoard.Supervisor)
-    :ok
-  end
-
   test "can start/stop a board server with supervision & registry" do
     assert true = is_pid(Process.whereis(MyBoard.Supervisor))
     assert true = is_pid(Process.whereis(MyBoard.Server.Registry))
     assert true = is_pid(Process.whereis(MyBoard.Server.DynamicSupervisor))
-    id = {:some, :id}
+    id = __ENV__.line
     assert {:ok, pid} = MyBoard.start_server(id: id)
     pid = Registry.whereis_name({MyBoard.Server.Registry, id})
     assert true = is_pid(pid)
@@ -66,16 +65,16 @@ defmodule Mogs.BoardTest do
     assert "HELLO" = MyBoard.read_state(:id_1, &String.upcase/1)
   end
 
-  test "can handle a tuple command" do
-    id = :id_2
-    assert {:ok, pid} = MyBoard.start_server(id: id, load_info: :some_state)
-    assert :ok = MyBoard.send_command(id, :dummy)
-    assert :some_state = MyBoard.send_command(id, :get_the_state)
-    assert true === Process.alive?(pid)
-    assert :bye = MyBoard.send_command(id, {:stop_me, :bye})
-    Process.sleep(100)
-    assert false === Process.alive?(pid)
-  end
+  # test "can handle a tuple command" do
+  #   id = :id_2
+  #   assert {:ok, pid} = MyBoard.start_server(id: id, load_info: :some_state)
+  #   assert :ok = MyBoard.send_command(id, :dummy)
+  #   assert :some_state = MyBoard.send_command(id, :get_the_state)
+  #   assert true === Process.alive?(pid)
+  #   assert :bye = MyBoard.send_command(id, {:stop_me, :bye})
+  #   Process.sleep(100)
+  #   assert false === Process.alive?(pid)
+  # end
 
   defmodule ComBoard do
     use Mogs.Board
@@ -85,11 +84,6 @@ defmodule Mogs.BoardTest do
     def load(_id, load_info) do
       {:ok, load_info}
     end
-  end
-
-  setup_all do
-    start_supervised!(ComBoard.Supervisor)
-    :ok
   end
 
   defmodule TransformState do
@@ -111,7 +105,7 @@ defmodule Mogs.BoardTest do
   end
 
   test "can handle a struct command" do
-    id = :id_3
+    id = __ENV__.line
     assert {:ok, pid} = ComBoard.start_server(id: id, load_info: :some_state)
 
     assert nil ===
@@ -130,12 +124,23 @@ defmodule Mogs.BoardTest do
 
   defmodule TimedBoard do
     use Mogs.Board
+    require Logger
+    @db Mogs.BoardTest.DB
 
     @derive {Mogs.Timers.Store, :timers}
-    defstruct var1: nil, timers: Mogs.Timers.new()
+    defstruct id: nil, timers: Mogs.Timers.new()
 
-    def load(_id, _load_info) do
-      {:ok, %__MODULE__{}}
+    def load(id, _load_info) do
+      case CubDB.fetch(@db, {__MODULE__, id}) do
+        {:ok, board} -> {:ok, board}
+        :error -> {:ok, %__MODULE__{id: id}}
+      end
+    end
+
+    def handle_update(%{id: id} = board) do
+      CubDB.put(@db, {__MODULE__, id}, board)
+
+      {:ok, board}
     end
   end
 
@@ -148,41 +153,100 @@ defmodule Mogs.BoardTest do
       {:ok, board} = start_timer(board, {300, :ms}, {pid, :timer_3})
       {:ok, board} = start_timer(board, {200, :ms}, {pid, :timer_2})
       {:ok, board} = start_timer(board, {100, :ms}, {pid, :timer_1})
-      {:ok, board} = start_timer(board, {999_999, :ms}, {pid, :timer_9999})
 
       return(board: board)
     end
 
-    def handle_timer({pid, name}, board) do
-      send(pid, {:handled!, name})
-      return(board: board)
-    end
-  end
+    def handle_timer({regname, name}, board) do
+      case Process.whereis(regname) do
+        pid when is_pid(pid) ->
+          send(pid, {:handled!, name})
+          return(board: board)
 
-  setup_all do
-    start_supervised!(TimedBoard.Supervisor)
-    :ok
+        _ ->
+          raise "Could not find pid for name #{inspect(regname)}"
+      end
+    end
   end
 
   test "a command can set a timer and handle it" do
-    id = :id_3
+    # We will not send a pid since after a test restard when we do not
+    # want to nuke the DB (which is bad), the pid is assigned to a
+    # random process that does not like to receive timers :D
+    Process.register(self, __MODULE__.TimerCommandReceiver)
+
+    id = __ENV__.line
     assert {:ok, pid} = TimedBoard.start_server(id: id, load_info: :some_state, timers: true)
     assert pid === GenServer.whereis(TimedBoard.__via__(id))
-    TimedBoard.send_command(id, %SetTimer{test_pid: self()})
+
+    TimedBoard.send_command(id, %SetTimer{test_pid: __MODULE__.TimerCommandReceiver})
 
     assert_next_receive({:handled!, :timer_1}, 1000)
     assert_next_receive({:handled!, :timer_2}, 1000)
     assert_next_receive({:handled!, :timer_3}, 1000)
 
     TimedBoard.read_state(id, fn board ->
-      assert 1 = TimeQueue.size(board.timers)
+      assert 0 = TimeQueue.size(board.timers)
     end)
 
-    Process.sleep(100)
+    Process.unregister(__MODULE__.TimerCommandReceiver)
   end
 
-  test "a board can stop and restart and still handle timers" do
-    # @todo
-    assert false
+  test "a board can stop and restart and still handle timers", context do
+    # See above
+    Process.register(self, __MODULE__.TimerCommandReceiverRevive)
+
+    id = __ENV__.line
+    assert {:ok, pid} = TimedBoard.start_server(id: id, load_info: :some_state, timers: true)
+    TimedBoard.send_command(id, %SetTimer{test_pid: __MODULE__.TimerCommandReceiverRevive})
+    pid = GenServer.whereis(TimedBoard.__via__(id))
+    # We will kill the board, and still expect to receive our timers,
+    # as the timers data (our pid) must be stored in the state.
+    # But that works only because the board has a persistence storage.
+    Process.exit(pid, :kill)
+
+    # After a reload of the persisted state, we expect the server to
+    # run a lifecyle loop and call our timers
+    assert_receive({:handled!, :timer_1}, 1000)
+    assert_receive({:handled!, :timer_2}, 1000)
+    assert_receive({:handled!, :timer_3}, 1000)
+
+    Process.unregister(__MODULE__.TimerCommandReceiverRevive)
+  end
+
+  defp flush_handlers() do
+    receive do
+      {:handled!, _} = msg ->
+        IO.inspect(msg)
+        flush_handlers()
+    after
+      10000 -> IO.puts("NO MSG")
+    end
+  end
+
+  setup_all do
+    db_dir = "test/db/#{__MODULE__}"
+
+    # case File.rm_rf(db_dir) do
+    #   {:ok, _} -> :ok
+    #   {:error, :enoent} -> :ok
+    #   other -> raise "Could not cleanup test db: #{inspect(other)}"
+    # end
+
+    start_supervised!(ComBoard.Supervisor)
+    start_supervised!(MyBoard.Supervisor)
+    start_supervised!(TimedBoard.Supervisor)
+    {:ok, cub} = CubDB.start_link(db_dir, name: @db)
+
+    Task.await(
+      Task.async(fn ->
+        CubDB.subscribe(cub)
+        CubDB.compact(cub)
+        assert_receive :compaction_completed
+        assert_receive :catch_up_completed
+      end)
+    )
+
+    :ok
   end
 end

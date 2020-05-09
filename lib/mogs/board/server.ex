@@ -52,7 +52,7 @@ defmodule Mogs.Board.Server do
   def init({mod, id, load_info, cfg}) do
     with :sync <- load_mode(mod),
          {:ok, board} <- load_board(mod, id, load_info) do
-      {:ok, s(id: id, mod: mod, board: board, cfg: cfg), @timeout}
+      {:ok, s(id: id, mod: mod, board: board, cfg: cfg), {:continue, :lifecycle}}
     else
       :async ->
         {:ok, s(id: id, mod: mod, board: load_info, cfg: cfg), {:continue, :async_load}}
@@ -80,8 +80,8 @@ defmodule Mogs.Board.Server do
   end
 
   @impl true
-  def handle_call({:run_command, command}, _from, s(board: board, mod: mod) = state) do
-    handle_result(mod.handle_command(command, board), true, state)
+  def handle_call({:run_command, command}, from, s(board: board, mod: mod) = state) do
+    handle_result(mod.handle_command(command, board), {true, from}, state)
   end
 
   @impl true
@@ -100,24 +100,31 @@ defmodule Mogs.Board.Server do
     {:noreply, state, @timeout}
   end
 
-  defp handle_result(result, reply?, state) do
-    case result do
-      %Result{continue: true, reply: reply, board: board, ok?: true} ->
-        if reply?,
-          do: {:reply, reply, s(state, board: board), {:continue, :lifecycle}},
-          else: {:noreply, s(state, board: board), {:continue, :lifecycle}}
-
-      %Result{continue: true, ok?: false} ->
-        raise "@todo when not ok, do we run callbacks ?"
-
-      %Result{continue: false, reply: reply, board: board, stop_reason: reason} ->
-        if reply?,
-          do: {:stop, reason, reply, s(state, board: board)},
-          else: {:stop, reason, s(state, board: board)}
-
-      other ->
-        {:stop, {:bad_return, other}, state}
+  defp handle_result(%Result{} = result, reply_info, s(mod: mod) = state) do
+    # First, send any command reply if needed
+    case reply_info do
+      false -> false
+      {true, gen_from} -> GenServer.reply(gen_from, result.reply)
     end
+
+    {callback, args} =
+      case result.ok? do
+        true ->
+          {:handle_update, [result.board]}
+
+        false ->
+          {:handle_error, [result.reason, result.board]}
+      end
+
+    case apply(mod, callback, args) do
+      {:ok, board} -> {:noreply, s(state, board: board), {:continue, :lifecycle}}
+      {:stop, reason} -> {:stop, result.reason, s(state, board: result.board)}
+    end
+  end
+
+  defp handle_result(not_a_result, _, state) do
+    Logger.error("Command returned invalid result: #{inspect(not_a_result)}")
+    {:stop, {:bad_command_return, not_a_result}, state}
   end
 
   defp load_mode(mod) do
@@ -132,7 +139,7 @@ defmodule Mogs.Board.Server do
     case mod.load(id, load_info) do
       {:ok, board} -> {:ok, board}
       {:error, _reason} = error -> error
-      other -> {:bad_return, {mod, :load, [id, load_info]}, other}
+      other -> {:error, {:bad_return, {mod, :load, [id, load_info]}, other}}
     end
   end
 
@@ -168,7 +175,6 @@ defmodule Mogs.Board.Server do
         gen_tuple =
           case TimeQueue.value(entry) do
             {:mogs_command_timer, command_mod, data} ->
-              Logger.debug("Handling timer #{inspect(command_mod)}")
               handle_result(command_mod.handle_timer(data, board), false, s(state, board: board))
 
             other ->

@@ -3,7 +3,7 @@ defmodule Mogs.Board do
   alias Supervisor, as: OTPSupervisor
   @callback load_mode() :: :sync | :async
   @callback load(id :: any, load_info :: any) :: {:ok, board :: any} | {:error, reason :: any}
-
+  @callback handle_update(board :: any) :: {:ok, board :: any} | {:stop, reason :: any}
   @type board :: any
 
   defmacro __using__(_opts) do
@@ -100,37 +100,72 @@ defmodule Mogs.Board do
         unquote(__MODULE__).__handle_command__(command, board)
       end
 
-      defoverridable load_mode: 0, read_state: 2, send_command: 2, handle_command: 2
+      @doc false
+      def handle_error(_error, board) do
+        {:ok, board}
+      end
+
+      defoverridable load_mode: 0,
+                     read_state: 2,
+                     send_command: 2,
+                     handle_command: 2,
+                     handle_error: 2
     end
   end
 
   defmacro __before_compile__(env) do
-    unless Module.defines?(env.module, {:load, 2}) do
-      message = """
-      function load/1 required by behaviour Mogs.Board is not implemented \
-      (in module #{inspect(env.module)}).
+    [
+      unless Module.defines?(env.module, {:load, 2}) do
+        message = """
+        function load/1 required by behaviour Mogs.Board is not implemented \
+        (in module #{inspect(env.module)}).
 
-      This default implementation will be defined:
+        This default implementation will be defined:
 
-        def load(_id, load_info) do
-          {:ok, load_info}
+          def load(_id, load_info) do
+            {:ok, load_info}
+          end
+
+        If no load_info option is given on #{inspect(env.module)}.start_server(opts),
+        this function will receive the id defined in opts.
+        """
+
+        IO.warn(message, Macro.Env.stacktrace(env))
+
+        quote do
+          @doc false
+          def load(_id, load_info) do
+            {:ok, load_info}
+          end
+
+          defoverridable load: 2
         end
+      end,
+      unless Module.defines?(env.module, {:handle_update, 1}) do
+        message = """
+        function handle_update/1 required by behaviour Mogs.Board is \
+        not implemented (in module #{inspect(env.module)}).
 
-      If no load_info option is given on #{inspect(env.module)}.start_server(opts),
-      this function will receive the id defined in opts.
-      """
+        This default implementation will be defined:
 
-      IO.warn(message, Macro.Env.stacktrace(env))
+          def handle_update(board) do
+            {:ok, board}
+          end
+        """
 
-      quote do
-        @doc false
-        def load(_id, load_info) do
-          {:ok, load_info}
+        IO.warn(message, Macro.Env.stacktrace(env))
+
+        quote do
+          @doc false
+          def handle_update(board) do
+            {:ok, board}
+          end
+
+          defoverridable handle_update: 1
         end
-
-        defoverridable load: 2
       end
-    end
+      # handle_error is silently added
+    ]
   end
 
   def start_server(module, supervisor, opts) do

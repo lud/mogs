@@ -50,8 +50,6 @@ defmodule Mogs.Players.Tracker do
   end
 
   def start_link(opts) when is_list(opts) do
-    IO.inspect(opts, label: "START_LINK OPTS")
-
     with {:ok, opts} <- KeywordValidator.validate(opts, @opts_schema) do
       GenServer.start_link(__MODULE__, opts, debug: [])
     end

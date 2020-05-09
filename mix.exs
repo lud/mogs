@@ -22,9 +22,12 @@ defmodule Mogs.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      # Depts
+      # Deps
       {:time_queue, ">= 0.5.0"},
       {:keyword_validator, "~> 1.0"},
+
+      # Test Deps
+      {:cubdb, "~> 1.0.0-rc3", only: [:test]},
 
       # Utils
       {:dialyxir, ">= 0.0.0", only: [:dev], runtime: false},

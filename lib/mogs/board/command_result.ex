@@ -1,17 +1,21 @@
 defmodule Mogs.Board.Command.Result do
-  defstruct continue: true, ok?: true, reply: nil, board: nil, stop_reason: :normal
+  @todo "Convert to a tuple if we do not need to stop a board from a command"
+
+  defstruct ok?: true,
+            reply: nil,
+            board: nil,
+            reason: nil
 
   @type t :: %__MODULE__{
-          continue: boolean,
           ok?: boolean,
           reply: any,
           board: any,
-          stop_reason: any
+          reason: any
         }
 
   alias __MODULE__, as: M
 
-  @accepted_keys ~w(reply stop error board)a
+  @accepted_keys ~w(reply error board)a
 
   def return(keyword) do
     return(%__MODULE__{}, keyword)
@@ -27,14 +31,6 @@ defmodule Mogs.Board.Command.Result do
     return(add(result, k, v), keyword)
   end
 
-  defp add(result, :stop, true) do
-    %M{result | continue: false, stop_reason: :normal}
-  end
-
-  defp add(result, :stop, reason) do
-    %M{result | continue: false, stop_reason: reason}
-  end
-
   defp add(result, :board, board) do
     %M{result | board: board}
   end
@@ -44,7 +40,7 @@ defmodule Mogs.Board.Command.Result do
   end
 
   defp add(result, :error, reason) do
-    put_default_reply(%M{result | ok?: false}, {:error, reason})
+    put_default_reply(%M{result | ok?: false, reason: reason}, {:error, reason})
   end
 
   defp add(_, k, v) when k in @accepted_keys do
