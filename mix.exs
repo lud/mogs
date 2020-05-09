@@ -24,6 +24,7 @@ defmodule Mogs.MixProject do
     [
       # Depts
       {:time_queue, ">= 0.5.0"},
+      {:keyword_validator, "~> 1.0"},
 
       # Utils
       {:dialyxir, ">= 0.0.0", only: [:dev], runtime: false},

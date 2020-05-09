@@ -180,4 +180,9 @@ defmodule Mogs.BoardTest do
 
     Process.sleep(100)
   end
+
+  test "a board can stop and restart and still handle timers" do
+    # @todo
+    assert false
+  end
 end
