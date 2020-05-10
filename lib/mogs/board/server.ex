@@ -96,7 +96,13 @@ defmodule Mogs.Board.Server do
   end
 
   def handle_info({:timeout, _, msg}, state) do
-    Logger.debug("Ignored timeout #{inspect(msg)}")
+    Logger.debug("Ignored erl timeout #{inspect(msg)}")
+    {:noreply, state, @timeout}
+  end
+
+  @todo "pass timeout to the board callback module"
+  def handle_info(:timeout, state) do
+    Logger.debug("Ignored GenServer :timeout")
     {:noreply, state, @timeout}
   end
 

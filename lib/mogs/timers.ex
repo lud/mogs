@@ -1,6 +1,10 @@
 defmodule Mogs.Timers do
   alias Mogs.Timers.Store
   @type board :: Store.t()
+  @todo """
+  Rewrite the protocol as is only needs put_timers and get_timers.
+  All other logic can be made in Mogs.Timers directly.
+  """
 
   # Borrowed types
   @type t :: TimeQueue.t()
@@ -107,13 +111,13 @@ defimpl Mogs.Timers.Store, for: Any do
       the key where timers must be stored:
 
         defmodule #{inspect(name)} do
-          @derive {#{@protocol}, key: my_key}
-          defstruct my_key: Mogs.timers()
+          @derive {#{inspect(@protocol)}, key: timers}
+          defstruct timers: Mogs.Timers.new()
 
       If you don't own the struct you may use Protocol.derive/3 placed outside \
       of any module:
 
-          Protocol.derive(#{@protocol}, #{inspect(name)}, key: :my_key)
+          Protocol.derive(#{inspect(@protocol)}, #{inspect(name)}, key: :timers)
       """
   end
 
@@ -168,8 +172,8 @@ defimpl Mogs.Timers.Store, for: Any do
         {:raise, ArgumentError,
          """
          A :key option is required when deriving Mogs.Timers:
-           @derive {Mogs.Timers.Store, key: :my_key}
-           defstruct my_key: Mogs.timers(), other_key: …
+           @derive {Mogs.Timers.Store, key: :timers}
+           defstruct timers: Mogs.Timers.new(), other_key: …
          """}
     end
   end

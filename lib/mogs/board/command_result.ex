@@ -2,7 +2,7 @@ defmodule Mogs.Board.Command.Result do
   @todo "Convert to a tuple if we do not need to stop a board from a command"
 
   defstruct ok?: true,
-            reply: nil,
+            reply: :ok,
             board: nil,
             reason: nil
 
@@ -40,7 +40,14 @@ defmodule Mogs.Board.Command.Result do
   end
 
   defp add(result, :error, reason) do
-    put_default_reply(%M{result | ok?: false, reason: reason}, {:error, reason})
+    reply =
+      case result.reply do
+        nil -> {:error, reason}
+        :ok -> {:error, reason}
+        other -> other
+      end
+
+    %M{result | ok?: false, reason: reason, reply: reply}
   end
 
   defp add(_, k, v) when k in @accepted_keys do

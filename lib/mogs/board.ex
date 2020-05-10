@@ -59,17 +59,17 @@ defmodule Mogs.Board do
         {:via, Registry, {unquote(registry_name), id}}
       end
 
-      @doc false
       def stop_server(id, reason \\ :normal, timeout \\ :infinity) do
         GenServer.stop(__via__(id), reason, timeout)
       end
 
-      @doc false
+      @doc """
+      Starts a Mogs.Board handled by the callback module #{inspect(__MODULE__)}
+      """
       def start_server(opts) when is_list(opts) do
         unquote(__MODULE__).start_server(unquote(board_mod), unquote(dynsup_name), opts)
       end
 
-      @doc false
       def load_mode() do
         :sync
       end

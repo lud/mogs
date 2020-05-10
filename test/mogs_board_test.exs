@@ -114,7 +114,7 @@ defmodule Mogs.BoardTest do
     id = __ENV__.line
     assert {:ok, pid} = ComBoard.start_server(id: id, load_info: :some_state)
 
-    assert nil ===
+    assert :ok ===
              ComBoard.send_command(id, %TransformState{
                trans: fn board -> board |> to_string |> String.upcase() end
              })
@@ -156,9 +156,9 @@ defmodule Mogs.BoardTest do
 
     def run(%{test_pid: pid}, board) do
       # reverse ttl order
-      {:ok, board} = start_timer(board, {300, :ms}, {pid, :timer_3})
-      {:ok, board} = start_timer(board, {200, :ms}, {pid, :timer_2})
-      {:ok, board} = start_timer(board, {100, :ms}, {pid, :timer_1})
+      board = start_timer(board, {300, :ms}, {pid, :timer_3})
+      board = start_timer(board, {200, :ms}, {pid, :timer_2})
+      board = start_timer(board, {100, :ms}, {pid, :timer_1})
 
       return(board: board)
     end

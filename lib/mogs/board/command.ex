@@ -22,11 +22,11 @@ defmodule Mogs.Board.Command do
       # Mogs.Board.Server cannot know wich custom 'now()' use.
       # That could be a callback from the board mod but that is unlikely needed.
       @spec start_timer(Mogs.Timers.board(), Mogs.Timers.ttl(), data :: any) ::
-              {:ok, Mogs.Timers.board()}
+              Mogs.Timers.board()
       defp start_timer(board, ttl, data) do
         timer = {:mogs_command_timer, __MODULE__, data}
         {:ok, _, board} = Mogs.Timers.enqueue_timer(board, ttl, timer)
-        {:ok, board}
+        board
       end
 
       def handle_timer(_data, _board) do
