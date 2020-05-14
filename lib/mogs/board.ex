@@ -1,116 +1,162 @@
 defmodule Mogs.Board do
   alias Mogs.Board.Command
   alias Supervisor, as: OTPSupervisor
-  @callback load_mode() :: :sync | :async
   @callback load(id :: any, load_info :: any) :: {:ok, board :: any} | {:error, reason :: any}
   @callback handle_update(board :: any) :: {:ok, board :: any} | {:stop, reason :: any}
   @type board :: any
 
-  defmacro __using__(_opts) do
+  @doc """
+
+  ### Options
+
+  #### Board
+
+  - `:load_mode` – Allowed values are `:sync` and `:async`. Sets
+    wether the `c:load/2` callback will be called during the board
+    server initialization (`:sync`) or after initialization. Defaults
+    to `:sync`.
+
+  #### Services
+
+  Those options allow to define the generated modules or services
+  associated to a board module. If a module would be generated, the
+  option sets both the module name and the process registration name.
+
+  Setting an option to `false` or `nil` will disable the corresponding
+  feature and no module will be generated during compilation and/or no
+  process will be started nor registered during runtime.
+
+  - `:supervisor` – The name for a generated `Supervisor` module that
+    will supervise other components (such as registry, servers
+    supervisor). Defaults to `__MODULE__.Supervisor`.
+  - `:registry` – The registration name for the `Registry` of
+    `Mogs.Board.Server` processes handling boards. Defaults to
+    `__MODULE__.Server.Registry`.
+  - `:server_sup` – The name for the generated `DynamicSupervisor`
+    module that will supervise each `Mogs.Board.Server` server
+    process. Defaults to `__MODULE__.Server.DynamicSupervisor`.
+  """
+  defmacro __using__(opts) do
     board_mod = __CALLER__.module
-    supervisor_name = Module.concat([board_mod, Supervisor])
-    registry_name = Module.concat([board_mod, Server.Registry])
-    dynsup_name = Module.concat([board_mod, Server.DynamicSupervisor])
 
-    supervisor_ast =
-      quote do
-        use OTPSupervisor
-        require Logger
+    using_schema = %{
+      load_mode: [inclusion: [:sync, :async], default: :sync],
+      supervisor: [type: :atom, default: Module.concat([board_mod, Supervisor])],
+      registry: [type: :atom, default: Module.concat([board_mod, Server.Registry])],
+      server_sup: [type: :atom, default: Module.concat([board_mod, Server.DynamicSupervisor])]
+    }
 
-        def start_link(init_arg) do
-          Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
+    opts = KeywordValidator.validate!(opts, using_schema)
+    IO.inspect(opts, label: "OPTS")
+
+    supervisor_name = Keyword.fetch!(opts, :supervisor)
+    registry_name = Keyword.fetch!(opts, :registry)
+    server_sup_name = Keyword.fetch!(opts, :server_sup)
+
+    # @todo "Move code to a Mogs.Board.Supervisor module and here just forward the child_spec call"
+
+    if !!supervisor_name do
+      supervisor_ast =
+        quote location: :keep, bind_quoted: [board_mod: board_mod] do
+          @board_mod board_mod
+
+          def child_spec(opts) do
+            children = @board_mod.__mogs__(:services)
+
+            default = %{
+              id: __MODULE__,
+              start:
+                {Supervisor, :start_link, [children, [strategy: :rest_for_one, name: __MODULE__]]},
+              type: :supervisor
+            }
+
+            Supervisor.child_spec(default, opts)
+          end
         end
 
-        def init(_init_arg) do
-          children = [
-            {Registry, keys: :unique, name: unquote(registry_name)},
-            unquote(dynsup_name)
-          ]
-
-          Supervisor.init(children, strategy: :rest_for_one)
-        end
-      end
-
-    dynsup_ast =
-      quote do
-        use DynamicSupervisor
-
-        def start_link(init_arg) do
-          DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
-        end
-
-        @impl true
-        def init(_init_arg) do
-          DynamicSupervisor.init(strategy: :one_for_one)
-        end
-      end
-
-    Module.create(supervisor_name, supervisor_ast, Macro.Env.location(__CALLER__))
-    Module.create(dynsup_name, dynsup_ast, Macro.Env.location(__CALLER__))
-
-    # @todo remove location-keep
-    quote location: :keep do
-      @behaviour unquote(__MODULE__)
-      # @todo On Elixir v2 before_compile check on genserver will be removed,
-      # check why.
-      @before_compile unquote(__MODULE__)
-
-      def __via__(id) do
-        {:via, Registry, {unquote(registry_name), id}}
-      end
-
-      def stop_server(id, reason \\ :normal, timeout \\ :infinity) do
-        GenServer.stop(__via__(id), reason, timeout)
-      end
-
-      @doc """
-      Starts a Mogs.Board handled by the callback module #{inspect(__MODULE__)}
-      """
-      def start_server(opts) when is_list(opts) do
-        unquote(__MODULE__).start_server(unquote(board_mod), unquote(dynsup_name), opts)
-      end
-
-      def load_mode() do
-        :sync
-      end
-
-      def read_state(id) do
-        read_state(id, fn state -> state end)
-      end
-
-      def read_state(id, fun) when is_function(fun, 1) do
-        unquote(__MODULE__).read_state(__via__(id), fun)
-      end
-
-      def send_command(id, command) do
-        unquote(__MODULE__).send_command(__via__(id), command)
-      end
-
-      @doc """
-      AUTOGENERATED. Default implementation for handling commands.
-
-      Accepts to command styles : Structs and {Module, data}.
-
-      * If a struct is given, the struct module `run_command/2` function will be
-        called with the struct itself and the board as arguments.
-      * If a 2-tuple {module, data}, the module `run_command/2` will be called
-        with the data and the board as arguments
-      """
-      def handle_command(command, board) do
-        unquote(__MODULE__).__handle_command__(command, board)
-      end
-
-      @doc false
-      def handle_error(_error, board) do
-        {:ok, board}
-      end
-
-      defoverridable load_mode: 0,
-                     read_state: 2,
-                     send_command: 2,
-                     handle_command: 2,
-                     handle_error: 2
+      Module.create(supervisor_name, supervisor_ast, Macro.Env.location(__CALLER__))
     end
+
+    [
+      quote location: :keep, bind_quoted: [opts: opts, __mogs__: __MODULE__] do
+        @__mogs__ __mogs__
+        @__mogs__load_mode Keyword.fetch!(opts, :load_mode)
+        @__mogs__supervisor Keyword.fetch!(opts, :supervisor)
+        @__mogs__registry Keyword.fetch!(opts, :registry)
+        @__mogs__server_sup Keyword.fetch!(opts, :server_sup)
+        @__mogs__has_supervisor? !!@__mogs__supervisor
+        @__mogs__has_registry? !!@__mogs__registry
+        @__mogs__has_server_sup? !!@__mogs__server_sup
+        Module.register_attribute(__MODULE__, :__mogs__service, accumulate: true)
+
+        if @__mogs__has_registry? do
+          @__mogs__service {Registry, keys: :unique, name: @__mogs__registry}
+        end
+
+        if @__mogs__has_server_sup? do
+          @__mogs__service {DynamicSupervisor, strategy: :one_for_one, name: @__mogs__server_sup}
+        end
+
+        @__mogs__services Module.get_attribute(__MODULE__, :__mogs__service, [])
+                          |> :lists.reverse()
+      end,
+      # @todo remove location-keep
+      quote location: :keep do
+        @behaviour @__mogs__
+        # @todo On Elixir v2 the before_compile check on genserver for
+        #     the init function presence will be removed, check why.
+        @before_compile @__mogs__
+
+        def __mogs__(:services), do: @__mogs__services
+        def __mogs__(:load_mode), do: @__mogs__load_mode
+
+        if @__mogs__has_registry? do
+          def __name__(pid) when is_pid(pid), do: pid
+          def __name__(id), do: {:via, Registry, {@__mogs__registry, id}}
+        end
+
+        if @__mogs__has_server_sup? do
+          @doc """
+          Starts a Mogs.Board handled by the callback module #{inspect(__MODULE__)}
+          """
+          def start_server(id, opts \\ []) when is_list(opts) do
+            opts = Keyword.put_new(opts, :name, __name__(id))
+            @__mogs__.start_server(__MODULE__, @__mogs__server_sup, id, opts)
+          end
+        end
+
+        def stop_server(id, reason \\ :normal, timeout \\ :infinity) do
+          GenServer.stop(__name__(id), reason, timeout)
+        end
+
+        def read_state(id) do
+          read_state(id, fn state -> state end)
+        end
+
+        def read_state(id, fun) when is_function(fun, 1) do
+          @__mogs__.read_state(__name__(id), fun)
+        end
+
+        def send_command(id, command) do
+          @__mogs__.send_command(__name__(id), command)
+        end
+
+        @doc false
+        def handle_command(command, board) do
+          @__mogs__.__handle_command__(command, board)
+        end
+
+        @doc false
+        def handle_error(_error, board) do
+          {:ok, board}
+        end
+
+        defoverridable read_state: 2,
+                       send_command: 2,
+                       handle_command: 2,
+                       handle_error: 2
+      end
+    ]
   end
 
   defmacro __before_compile__(env) do
@@ -126,8 +172,8 @@ defmodule Mogs.Board do
             {:ok, load_info}
           end
 
-        If no load_info option is given on #{inspect(env.module)}.start_server(opts),
-        this function will receive the id defined in opts.
+        If no :load_info option is given on #{inspect(env.module)}.start_server(id, opts), \
+        load_info will be nil.
         """
 
         IO.warn(message, Macro.Env.stacktrace(env))
@@ -163,31 +209,55 @@ defmodule Mogs.Board do
 
           defoverridable handle_update: 1
         end
+      end,
+      unless Module.defines?(env.module, {:__name__, 1}) do
+        message = """
+        Registry service is disabled for #{inspect(env.module)}
+
+        Board processes name default to nil according to the \
+        following implementation that was injected in your module:
+
+          def __name__(pid) when is_pid(pid) do
+            pid
+          end
+          
+          def __name__(board_id) do
+            nil
+          end
+
+        Please define your own implementation to suppress this
+        warning. You can simply copy this one if you do not need name
+        registration for your boards.
+        """
+
+        IO.warn(message, Macro.Env.stacktrace(env))
+
+        quote do
+          @doc false
+          def __name__(pid) when is_pid(pid) do
+            pid
+          end
+
+          def __name__(board_id) do
+            nil
+          end
+
+          defoverridable __name__: 1
+        end
       end
-      # handle_error is silently added
     ]
   end
 
-  def start_server(module, supervisor, opts) do
-    id =
-      case Keyword.fetch(opts, :id) do
-        {:ok, id} ->
-          id
-
-        :error ->
-          raise ArgumentError, "#{module}.start_server/1 requires an :id option"
-      end
-
+  def start_server(module, supervisor, id, opts) do
     opts_schema = %{
-      id: [required: true],
-      name: [default: module.__via__(id)],
       mod: [default: module],
-      load_info: [default: id],
+      load_info: [default: nil],
+      name: [],
       timers: [type: :boolean, default: false]
     }
 
     with {:ok, opts} <- KeywordValidator.validate(opts, opts_schema) do
-      DynamicSupervisor.start_child(supervisor, {Mogs.Board.Server, opts})
+      DynamicSupervisor.start_child(supervisor, {Mogs.Board.Server, [{:id, id} | opts]})
     end
   end
 
@@ -220,4 +290,9 @@ defmodule Mogs.Board do
       module to handle custom commands.
     """
   end
+end
+
+defmodule SampleBoard do
+  @todo "Delete this module"
+  use Mogs.Board
 end

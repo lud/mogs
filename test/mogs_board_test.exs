@@ -20,10 +20,8 @@ defmodule Mogs.BoardTest do
   end
 
   defmodule MyBoard do
-    use Mogs.Board
+    use Mogs.Board, load_mode: :async
     import Mogs.Board.Command.Result
-
-    def load_mode(), do: :async
 
     def load(_id, info) do
       {:ok, info}
@@ -55,7 +53,7 @@ defmodule Mogs.BoardTest do
     assert true = is_pid(Process.whereis(MyBoard.Server.Registry))
     assert true = is_pid(Process.whereis(MyBoard.Server.DynamicSupervisor))
     id = __ENV__.line
-    assert {:ok, pid} = MyBoard.start_server(id: id)
+    assert {:ok, pid} = MyBoard.start_server(id)
     pid = Registry.whereis_name({MyBoard.Server.Registry, id})
     assert true = is_pid(pid)
     assert true = Process.alive?(pid)
@@ -67,13 +65,13 @@ defmodule Mogs.BoardTest do
   end
 
   test "can read the state of a board" do
-    assert {:ok, pid} = MyBoard.start_server(id: :id_1, load_info: "hello")
+    assert {:ok, pid} = MyBoard.start_server(:id_1, load_info: "hello")
     assert "HELLO" = MyBoard.read_state(:id_1, &String.upcase/1)
   end
 
   test "can handle a tuple command" do
     id = :id_2
-    assert {:ok, pid} = MyBoard.start_server(id: id, load_info: :some_state)
+    assert {:ok, pid} = MyBoard.start_server(id, load_info: :some_state)
     assert :ok = MyBoard.send_command(id, :dummy)
     assert :some_state = MyBoard.send_command(id, :get_the_state)
     assert true === Process.alive?(pid)
@@ -112,7 +110,7 @@ defmodule Mogs.BoardTest do
 
   test "can handle a struct command" do
     id = __ENV__.line
-    assert {:ok, pid} = ComBoard.start_server(id: id, load_info: :some_state)
+    assert {:ok, pid} = ComBoard.start_server(id, load_info: :some_state)
 
     assert :ok ===
              ComBoard.send_command(id, %TransformState{
@@ -171,8 +169,8 @@ defmodule Mogs.BoardTest do
 
   test "a command can set a timer and handle it" do
     id = __ENV__.line
-    assert {:ok, pid} = TimedBoard.start_server(id: id, load_info: :some_state, timers: true)
-    assert pid === GenServer.whereis(TimedBoard.__via__(id))
+    assert {:ok, pid} = TimedBoard.start_server(id, load_info: :some_state, timers: true)
+    assert pid === GenServer.whereis(TimedBoard.__name__(id))
 
     TimedBoard.send_command(id, %SetTimer{test_pid: self()})
 
@@ -189,9 +187,9 @@ defmodule Mogs.BoardTest do
 
   test "a board can stop and restart and still handle timers" do
     id = __ENV__.line
-    assert {:ok, pid} = TimedBoard.start_server(id: id, load_info: :some_state, timers: true)
+    assert {:ok, pid} = TimedBoard.start_server(id, load_info: :some_state, timers: true)
     TimedBoard.send_command(id, %SetTimer{test_pid: self()})
-    pid = GenServer.whereis(TimedBoard.__via__(id))
+    pid = GenServer.whereis(TimedBoard.__name__(id))
     # We will kill the board, and still expect to receive our timers,
     # as the timers data (our pid) must be stored in the state.
     # But that works only because the board has a persistence storage.
@@ -222,6 +220,44 @@ defmodule Mogs.BoardTest do
     {:ok, _} = CubDB.start_link(db_dir, name: @db)
 
     :ok
+  end
+
+  defmodule AnomBoard do
+    use Mogs.Board, load_mode: :async, registry: false, server_sup: false, supervisor: false
+
+    def load(_id, load_info) do
+      {:ok, load_info}
+    end
+  end
+
+  test "can start/stop anonymous, unsupervised boards" do
+    id = __ENV__.line
+
+    assert_raise UndefinedFunctionError, fn ->
+      AnomBoard.start_server(id)
+    end
+
+    assert nil === AnomBoard.__name__(id)
+
+    assert {:ok, pid} =
+             Mogs.Board.Server.start_link(
+               id: id,
+               mod: AnomBoard,
+               name: nil,
+               load_info: :some_state
+             )
+
+    assert pid === AnomBoard.__name__(pid)
+
+    assert true = is_pid(pid)
+    assert true = Process.alive?(pid)
+
+    assert :some_state = AnomBoard.read_state(pid)
+
+    # # stopping
+    # assert :ok = MyBoard.stop_server(id)
+    # assert :undefined = Registry.whereis_name({MyBoard.Server.Registry, id})
+    # assert false === Process.alive?(pid)
   end
 
   # defp sync_cub() do

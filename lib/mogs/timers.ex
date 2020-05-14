@@ -1,10 +1,6 @@
 defmodule Mogs.Timers do
   alias Mogs.Timers.Store
   @type board :: Store.t()
-  @todo """
-  Rewrite the protocol as is only needs put_timers and get_timers.
-  All other logic can be made in Mogs.Timers directly.
-  """
 
   # Borrowed types
   @type t :: TimeQueue.t()

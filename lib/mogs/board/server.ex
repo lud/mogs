@@ -25,7 +25,7 @@ defmodule Mogs.Board.Server do
     mod = Keyword.fetch!(opts, :mod)
     id = Keyword.fetch!(opts, :id)
     name = Keyword.fetch!(opts, :name)
-    load_info = Keyword.fetch!(opts, :load_info)
+    load_info = Keyword.get(opts, :load_info, nil)
     # debug: [:trace]
     cfg = load_board_config(cfg_opts, rcfg())
     GenServer.start_link(__MODULE__, {mod, id, load_info, cfg}, name: name)
@@ -134,11 +134,7 @@ defmodule Mogs.Board.Server do
   end
 
   defp load_mode(mod) do
-    case mod.load_mode() do
-      :sync -> :sync
-      :async -> :async
-      other -> {:bad_return, {mod, :load_mode, []}, other}
-    end
+    mod.__mogs__(:load_mode)
   end
 
   defp load_board(mod, id, load_info) do
