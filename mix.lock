@@ -17,5 +17,6 @@
   "nimble_parsec": {:hex, :nimble_parsec, "0.5.3", "def21c10a9ed70ce22754fdeea0810dafd53c2db3219a0cd54cf5526377af1c6", [:mix], [], "hexpm", "589b5af56f4afca65217a1f3eb3fee7e79b09c40c742fddc1c312b3ac0b3399f"},
   "sleeplocks": {:hex, :sleeplocks, "1.1.1", "3d462a0639a6ef36cc75d6038b7393ae537ab394641beb59830a1b8271faeed3", [:rebar3], [], "hexpm", "84ee37aeff4d0d92b290fff986d6a95ac5eedf9b383fadfd1d88e9b84a1c02e1"},
   "time_queue": {:hex, :time_queue, "0.5.0", "8e62c6775f52ad46d123b759b7abb75c5370ccb64ed4dbcbc4208dc10d488d43", [:mix], [], "hexpm", "b55908547f95bd74f7ece8407a80850549089e55aae84a9d593eab98d3a52b54"},
+  "todo": {:hex, :todo, "1.4.1", "87ac6614ac424bb38ae6cffce4f8cf75090713167f5872ac522ce765cea6e8f7", [:mix], [], "hexpm", "22685abbf1581141c9f8c1b5fc348d633076b9a6b688e61d665eb0e31a1a6483"},
   "unsafe": {:hex, :unsafe, "1.0.1", "a27e1874f72ee49312e0a9ec2e0b27924214a05e3ddac90e91727bc76f8613d8", [:mix], [], "hexpm", "6c7729a2d214806450d29766abc2afaa7a2cbecf415be64f36a6691afebb50e5"},
 }

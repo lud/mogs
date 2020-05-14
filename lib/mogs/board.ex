@@ -1,6 +1,6 @@
 defmodule Mogs.Board do
+  use TODO
   alias Mogs.Board.Command
-  alias Supervisor, as: OTPSupervisor
   @callback load(id :: any, load_info :: any) :: {:ok, board :: any} | {:error, reason :: any}
   @callback handle_update(board :: any) :: {:ok, board :: any} | {:stop, reason :: any}
   @type board :: any
@@ -47,13 +47,10 @@ defmodule Mogs.Board do
     }
 
     opts = KeywordValidator.validate!(opts, using_schema)
-    IO.inspect(opts, label: "OPTS")
 
     supervisor_name = Keyword.fetch!(opts, :supervisor)
-    registry_name = Keyword.fetch!(opts, :registry)
-    server_sup_name = Keyword.fetch!(opts, :server_sup)
 
-    # @todo "Move code to a Mogs.Board.Supervisor module and here just forward the child_spec call"
+    todo "Move code to a Mogs.Board.Supervisor module and here just forward the child_spec call"
 
     if !!supervisor_name do
       supervisor_ast =
@@ -77,6 +74,13 @@ defmodule Mogs.Board do
       Module.create(supervisor_name, supervisor_ast, Macro.Env.location(__CALLER__))
     end
 
+    todo "1.0.0": "remove location-keep"
+
+    todo """
+    On Elixir v2 the before_compile check on genserver for
+    the init function presence will be removed, check why.
+    """
+
     [
       quote location: :keep, bind_quoted: [opts: opts, __mogs__: __MODULE__] do
         @__mogs__ __mogs__
@@ -87,6 +91,7 @@ defmodule Mogs.Board do
         @__mogs__has_supervisor? !!@__mogs__supervisor
         @__mogs__has_registry? !!@__mogs__registry
         @__mogs__has_server_sup? !!@__mogs__server_sup
+
         Module.register_attribute(__MODULE__, :__mogs__service, accumulate: true)
 
         if @__mogs__has_registry? do
@@ -100,11 +105,9 @@ defmodule Mogs.Board do
         @__mogs__services Module.get_attribute(__MODULE__, :__mogs__service, [])
                           |> :lists.reverse()
       end,
-      # @todo remove location-keep
       quote location: :keep do
         @behaviour @__mogs__
-        # @todo On Elixir v2 the before_compile check on genserver for
-        #     the init function presence will be removed, check why.
+
         @before_compile @__mogs__
 
         def __mogs__(:services), do: @__mogs__services
@@ -220,7 +223,7 @@ defmodule Mogs.Board do
           def __name__(pid) when is_pid(pid) do
             pid
           end
-          
+
           def __name__(board_id) do
             nil
           end
@@ -290,9 +293,4 @@ defmodule Mogs.Board do
       module to handle custom commands.
     """
   end
-end
-
-defmodule SampleBoard do
-  @todo "Delete this module"
-  use Mogs.Board
 end

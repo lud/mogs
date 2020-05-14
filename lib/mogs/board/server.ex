@@ -6,6 +6,7 @@ defmodule Mogs.Board.Server.Options do
 end
 
 defmodule Mogs.Board.Server do
+  use TODO
   use GenServer, restart: :transient
   require Logger
   require Record

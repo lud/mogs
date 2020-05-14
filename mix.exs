@@ -33,7 +33,8 @@ defmodule Mogs.MixProject do
       {:dialyxir, ">= 0.0.0", only: [:dev], runtime: false},
       {:decompilerl, github: "niahoo/decompilerl", only: [:dev]},
       {:ex_doc, ">= 0.0.0", only: [:dev], runtime: false},
-      {:credo, "~> 1.1", only: [:dev], runtime: false}
+      {:credo, "~> 1.1", only: [:dev], runtime: false},
+      {:todo, "~> 1.4.1"}
     ]
   end
 end

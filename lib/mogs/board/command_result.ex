@@ -1,4 +1,5 @@
 defmodule Mogs.Board.Command.Result do
+  use TODO
   @todo "Convert to a tuple if we do not need to stop a board from a command"
 
   defstruct ok?: true,
@@ -56,14 +57,6 @@ defmodule Mogs.Board.Command.Result do
 
   defp add(_, k, _) do
     raise ArgumentError, "invalid result key: #{inspect(k)}"
-  end
-
-  defp put_default_reply(%M{reply: nil} = result, reply) do
-    %M{result | reply: reply}
-  end
-
-  defp put_default_reply(%M{} = result, _reply) do
-    result
   end
 
   def put_default_board(%M{board: nil} = result, board) do

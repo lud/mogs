@@ -252,12 +252,11 @@ defmodule Mogs.BoardTest do
     assert true = is_pid(pid)
     assert true = Process.alive?(pid)
 
+    # We can still use the functions created in AnomBoard with a pid
     assert :some_state = AnomBoard.read_state(pid)
 
-    # # stopping
-    # assert :ok = MyBoard.stop_server(id)
-    # assert :undefined = Registry.whereis_name({MyBoard.Server.Registry, id})
-    # assert false === Process.alive?(pid)
+    assert :ok = GenServer.stop(pid)
+    assert false === Process.alive?(pid)
   end
 
   # defp sync_cub() do
