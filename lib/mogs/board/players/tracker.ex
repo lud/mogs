@@ -1,7 +1,8 @@
 defmodule Mogs.Players.Tracker do
+  use TODO
   require Record
   require Logger
-  @sup Mogs.Players.Tracker.DynamicSupervisor
+
   @default_player_timeout 30_000
 
   @opts_schema %{timeout: [type: :integer, required: true, default: @default_player_timeout]}
@@ -54,8 +55,6 @@ defmodule Mogs.Players.Tracker do
     s(ptimeout: Keyword.fetch!(opts, :timeout))
   end
 
-  import GenServer, only: [call: 2]
-
   def track(s(p2ms: p2ms, m2p: m2p) = state, player_id, pid) when is_pid(pid) do
     Logger.debug("Monitoring process #{inspect(pid)} for player #{inspect(player_id)}")
     ref = Process.monitor(pid)
@@ -65,15 +64,9 @@ defmodule Mogs.Players.Tracker do
     s(state, p2ms: p2ms, m2p: m2p)
   end
 
-  def forget(tracker, player_id) do
-    call(tracker, {:forget, player_id})
-  end
-
-  def start_link(opts) when is_list(opts) do
-    with {:ok, opts} <- KeywordValidator.validate(opts, @opts_schema) do
-      GenServer.start_link(__MODULE__, opts, debug: [])
-    end
-  end
+  # def forget(tracker, player_id) do
+  #   call(tracker, {:forget, player_id})
+  # end
 
   def handle_call({:forget, player_id}, _from, s(p2ms: p2ms, m2p: m2p, p2tref: p2tref) = state) do
     {p2ms, m2p} =
@@ -95,7 +88,8 @@ defmodule Mogs.Players.Tracker do
   end
 
   # Cancels any timeout present in p2tref for player_id and also deletes
-  # the player_id key from the p2tref map
+  # the player_id key from the p2tref map in case the timeout is already in the
+  # messagebox so we can ignore it as it will not match
   defp maybe_cancel_timeout(s(p2tref: p2tref) = state, player_id)
        when is_map_key(p2tref, player_id) do
     {ref, p2tref} = Map.pop(p2tref, player_id)
@@ -113,15 +107,8 @@ defmodule Mogs.Players.Tracker do
     state
   end
 
-  # Client is down
-  def handle_info({:DOWN, ref, :process, pid, reason}, s(client: {pid, ref}) = state) do
-    # Stop with the same reason. No restart expected as we are a
-    # temporary process.
-    {:stop, reason, state}
-  end
-
   # A tracked process is down
-  def handle_info({:DOWN, ref, :process, _pid, _}, s(m2p: m2p) = state)
+  def handle_down(s(m2p: m2p) = state, {:DOWN, ref, :process, _pid, _})
       when is_map_key(m2p, ref) do
     s(m2p: m2p, p2ms: p2ms, p2tref: p2tref, ptimeout: delay) = state
     {player_id, m2p} = Map.pop(m2p, ref)
@@ -145,44 +132,34 @@ defmodule Mogs.Players.Tracker do
         state
       else
         Logger.debug("Start erlang timer for #{delay}ms")
-        tref = :erlang.start_timer(delay, self(), {:check_player, player_id})
+        tref = :erlang.start_timer(delay, self(), {__MODULE__, player_id})
         s(state, p2tref: Map.put(p2tref, player_id, tref))
       end
 
-    {:noreply, state, @hibernate_timeout}
+    {:ok, state}
   end
 
-  def handle_info({:timeout, ref, {:check_player, player_id}}, s(p2tref: p2tref) = state)
+  def handle_down(_state, {:DOWN, ref, :process, pid, _}) do
+    Logger.error("Unknown monitor reference: #{inspect(ref)} pid: #{inspect(pid)}")
+    :unknown
+  end
+
+  def handle_timeout(s(p2tref: p2tref) = state, {:timeout, ref, {__MODULE__, player_id}})
       when is_map_key(p2tref, player_id) and ref == :erlang.map_get(player_id, p2tref) do
-    s(p2ms: p2ms, p2tref: p2tref, client: {client_pid, _}) = state
     # We receive a timeout for a player, and since this timeout ref is
     # in our state it means the player was not tracked since we
     # started the timer, so the player actually left
+    s(p2ms: p2ms, p2tref: p2tref) = state
     p2tref = Map.delete(p2tref, player_id)
     p2ms = Map.delete(p2ms, player_id)
     state = s(state, p2tref: p2tref, p2ms: p2ms)
-    # We will inform the client that the player left
-    send(client_pid, {__MODULE__, :player_timeout, player_id})
-    {:noreply, state, @hibernate_timeout}
+    # We will return our new state and also tell the caller that there is a
+    # player timeout.
+    {:player_timeout, player_id, state}
   end
 
-  def handle_info({:timeout, _ref, {:check_player, _}}, state) do
-    # Ignore state timeout
-    {:noreply, state, @hibernate_timeout}
-  end
-
-  def handle_info({:DOWN, ref, :process, pid, _}, state) do
-    # Monitor ref is unknown
-    Logger.error("Unknown monitor reference: #{inspect(ref)} pid: #{inspect(pid)}")
-    {:noreply, state, @hibernate_timeout}
-  end
-
-  def handle_info(:timeout, state) do
-    {:noreply, state, :hibernate}
-  end
-
-  def handle_info(msg, state) do
-    Logger.error("Unhandled info in #{__MODULE__}: #{inspect(msg)}")
-    {:noreply, state}
+  def handle_timeout(_, {:timeout, _ref, {__MODULE__, _}}) do
+    # Ignore stale timeout
+    :stale
   end
 end

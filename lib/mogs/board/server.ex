@@ -1,4 +1,4 @@
-defmodule Mogs.Board.Server.Options do
+defmodule Mogs.Board.Server.Config do
   @moduledoc false
   # Board options
   require Record
@@ -10,18 +10,19 @@ defmodule Mogs.Board.Server do
   use GenServer, restart: :transient
   require Logger
   require Record
-  import Mogs.Board.Server.Options, only: [rcfg: 0, rcfg: 1, rcfg: 2], warn: false
+  alias Mogs.Board.Command.Result
+  alias Mogs.Players.Tracker
+  import Mogs.Board.Server.Config, only: [rcfg: 0, rcfg: 1, rcfg: 2], warn: false
   # GenServer state
   #
   # tref is a 2-tuple holding two time references : a TimeQueue tref and an
   # :erlang tref.
   Record.defrecordp(:s, id: nil, mod: nil, board: nil, tref: {nil, nil}, cfg: rcfg(), tracker: nil)
 
-  alias Mogs.Board.Command.Result
-  alias Mogs.Players.Tracker
-
   # @todo allow to define the timeout from the `use Mogs.Board` call
   @timeout 60_000
+
+  @todo "Proper options validation must be done here, it is the last moment to set defaults"
 
   def start_link(opts) when is_list(opts) do
     {opts, cfg_opts} = Keyword.split(opts, [:mod, :id, :name, :load_info])
@@ -29,12 +30,11 @@ defmodule Mogs.Board.Server do
     id = Keyword.fetch!(opts, :id)
     name = Keyword.fetch!(opts, :name)
     load_info = Keyword.get(opts, :load_info, nil)
-    # debug: [:trace]
     cfg = load_board_config(cfg_opts, rcfg())
 
     tracker =
       case rcfg(cfg, :tracker) do
-        false -> nil
+        nil -> nil
         tracker_opts when is_list(tracker_opts) -> Tracker.new(tracker_opts)
       end
 
@@ -57,8 +57,8 @@ defmodule Mogs.Board.Server do
     rcfg(cfg, tracker: v)
   end
 
-  defp load_board_config_elem(:tracker, false, cfg) do
-    rcfg(cfg, tracker: false)
+  defp load_board_config_elem(:tracker, nil, cfg) do
+    rcfg(cfg, tracker: nil)
   end
 
   defp load_board_config_elem(k, v, cfg) do
@@ -128,6 +128,11 @@ defmodule Mogs.Board.Server do
     end
   end
 
+  def handle_call({:track_player, player_id, pid}, _from, s(tracker: tracker) = state) do
+    tracker = Tracker.track(tracker, player_id, pid)
+    {:reply, :ok, s(state, tracker: tracker), @timeout}
+  end
+
   @impl true
   # Receiving a timeout for wich we have a reference in the state.
   def handle_info({:timeout, erl_tref, msg}, s(tref: {_, erl_tref}) = state) do
@@ -140,21 +145,51 @@ defmodule Mogs.Board.Server do
   end
 
   @impl true
+  def handle_info({:timeout, _, {Tracker, _}} = msg, s(tracker: tracker) = state) do
+    case Tracker.handle_timeout(tracker, msg) do
+      :stale ->
+        {:noreply, state, @timeout}
+
+      {:player_timeout, player_id, tracker} ->
+        s(board: board, mod: mod) = state
+        state = s(state, tracker: tracker)
+
+        case mod.handle_player_timeout(board, player_id) do
+          {:ok, board} ->
+            handle_result(
+              %Result{board: board, ok?: true, reply: :ok},
+              false,
+              state
+            )
+
+          {:stop, reason} ->
+            {:stop, reason, state}
+        end
+    end
+  end
+
+  @impl true
   def handle_info({:timeout, _, msg}, state) do
     Logger.debug("Ignored erl timeout #{inspect(msg)}")
     {:noreply, state, @timeout}
   end
 
-  @todo "pass timeout to the board callback module"
   @impl true
+  @todo "pass timeout to the board callback module"
   def handle_info(:timeout, state) do
-    Logger.debug("Ignored GenServer :timeout")
+    Logger.debug("Ignored #{inspect(__MODULE__)} :timeout")
     {:noreply, state, @timeout}
   end
 
-  def handle_info({:DOWN, ref, :process, pid, reason} = msg, state) do
-    Logger.warn("Received monitor down message: #{inspect(msg)}")
-    {:noreply, state, @timeout}
+  def handle_info({:DOWN, _, :process, _, _} = msg, s(tracker: tracker) = state) do
+    case Tracker.handle_down(tracker, msg) do
+      {:ok, tracker} ->
+        {:noreply, s(state, tracker: tracker), @timeout}
+
+      :unknown ->
+        Logger.warn("Received monitor down message: #{inspect(msg)}")
+        {:noreply, state, @timeout}
+    end
   end
 
   defp handle_result(%Result{} = result, reply_info, s(mod: mod) = state) do

@@ -3,8 +3,11 @@ defmodule Mogs.Board do
   alias Mogs.Board.Command
   @callback load(id :: any, load_info :: any) :: {:ok, board :: any} | {:error, reason :: any}
   @callback handle_update(board :: any) :: {:ok, board :: any} | {:stop, reason :: any}
+  @todo "Define callbacks in different 'plugin' behaviours"
   @callback handle_add_player(board :: any, player_id :: any, data :: any) ::
               {:ok, board :: any} | {:error, reason :: any}
+  @callback handle_player_timeout(board :: any, player_id :: any) ::
+              {:ok, board :: any} | {:stop, reason :: any}
   @type board :: any
 
   @doc """
@@ -181,8 +184,20 @@ defmodule Mogs.Board do
           def add_player(id, player_id, data, track \\ nil)
         end
 
-        def add_player(id, player_id, data, track_pid) do
-          @__mogs__.add_player(__name__(id), player_id, data, track_pid)
+        def add_player(id, player_id, data, pid) do
+          @__mogs__.add_player(__name__(id), player_id, data, pid)
+        end
+
+        if @__mogs__is_tracking? do
+          @doc """
+          Add a pid to the players tracking system. Unlinke add_player, it will
+          no call your `c:handle_add_player/3` callback, nor any other callback.
+          """
+          def track_player(id, player_id, pid \\ self())
+
+          def track_player(id, player_id, pid) when is_pid(pid) do
+            @__mogs__.track_player(__name__(id), player_id, pid)
+          end
         end
 
         @doc false
@@ -298,7 +313,7 @@ defmodule Mogs.Board do
       load_info: [default: nil],
       name: [],
       timers: [type: :boolean, default: false],
-      tracker: [default: false, required: true]
+      tracker: [required: false, default: nil]
     }
 
     with {:ok, opts} <- KeywordValidator.validate(opts, opts_schema) do
@@ -336,14 +351,12 @@ defmodule Mogs.Board do
     """
   end
 
-  def add_player(name_or_pid, player_id, data, track_pid) do
-    IO.puts("lolilol")
+  def add_player(name_or_pid, player_id, data, pid) when is_pid(pid) or is_nil(pid) do
+    GenServer.call(name_or_pid, {:add_player, player_id, data, pid})
+  end
 
-    IO.inspect(name_or_pid, label: :name_or_pid)
-    IO.inspect(GenServer.whereis(name_or_pid), label: "GenServer.whereis(name_or_pid)")
-
-    GenServer.call(name_or_pid, {:add_player, player_id, data, track_pid}, 100)
-    |> IO.inspect(label: "CALL add_player")
+  def track_player(name_or_pid, player_id, pid) when is_pid(pid) do
+    GenServer.call(name_or_pid, {:track_player, player_id, pid})
   end
 end
 
