@@ -2,7 +2,7 @@ defmodule Mogs.Board.Server.Options do
   @moduledoc false
   # Board options
   require Record
-  Record.defrecord(:rcfg, timers: false)
+  Record.defrecord(:rcfg, timers: false, tracker: nil)
 end
 
 defmodule Mogs.Board.Server do
@@ -15,8 +15,10 @@ defmodule Mogs.Board.Server do
   #
   # tref is a 2-tuple holding two time references : a TimeQueue tref and an
   # :erlang tref.
-  Record.defrecordp(:s, id: nil, mod: nil, board: nil, tref: {nil, nil}, cfg: rcfg())
+  Record.defrecordp(:s, id: nil, mod: nil, board: nil, tref: {nil, nil}, cfg: rcfg(), tracker: nil)
+
   alias Mogs.Board.Command.Result
+  alias Mogs.Players.Tracker
 
   # @todo allow to define the timeout from the `use Mogs.Board` call
   @timeout 60_000
@@ -29,7 +31,14 @@ defmodule Mogs.Board.Server do
     load_info = Keyword.get(opts, :load_info, nil)
     # debug: [:trace]
     cfg = load_board_config(cfg_opts, rcfg())
-    GenServer.start_link(__MODULE__, {mod, id, load_info, cfg}, name: name)
+
+    tracker =
+      case rcfg(cfg, :tracker) do
+        false -> nil
+        tracker_opts when is_list(tracker_opts) -> Tracker.new(tracker_opts)
+      end
+
+    GenServer.start_link(__MODULE__, {mod, id, load_info, cfg, tracker}, name: name)
   end
 
   defp load_board_config([], cfg) do
@@ -44,19 +53,29 @@ defmodule Mogs.Board.Server do
     rcfg(cfg, timers: v)
   end
 
+  defp load_board_config_elem(:tracker, v, cfg) when is_list(v) do
+    rcfg(cfg, tracker: v)
+  end
+
+  defp load_board_config_elem(:tracker, false, cfg) do
+    rcfg(cfg, tracker: false)
+  end
+
   defp load_board_config_elem(k, v, cfg) do
     Logger.warn("Ignored Invalid #{__MODULE__} config options: #{inspect(k)}=#{inspect(v)}")
     cfg
   end
 
   @impl true
-  def init({mod, id, load_info, cfg}) do
+  def init({mod, id, load_info, cfg, tracker}) do
     with :sync <- load_mode(mod),
          {:ok, board} <- load_board(mod, id, load_info) do
-      {:ok, s(id: id, mod: mod, board: board, cfg: cfg), {:continue, :lifecycle}}
+      {:ok, s(id: id, mod: mod, board: board, cfg: cfg, tracker: tracker),
+       {:continue, :lifecycle}}
     else
       :async ->
-        {:ok, s(id: id, mod: mod, board: load_info, cfg: cfg), {:continue, :async_load}}
+        {:ok, s(id: id, mod: mod, board: load_info, cfg: cfg, tracker: tracker),
+         {:continue, :async_load}}
 
       {:error, reason} ->
         {:stop, reason}
@@ -86,6 +105,30 @@ defmodule Mogs.Board.Server do
   end
 
   @impl true
+  def handle_call({:add_player, player_id, data, pid}, from, s(board: board, mod: mod) = state) do
+    case mod.handle_add_player(board, player_id, data) do
+      {:error, _} = err ->
+        todo "Should we run lifecycle on error? Maybe just handle result"
+        {:reply, err, state, @timeout}
+
+      {:ok, board} ->
+        tracker = s(state, :tracker)
+
+        tracker =
+          case pid do
+            nil -> tracker
+            pid when is_pid(pid) -> Tracker.track(tracker, player_id, pid)
+          end
+
+        handle_result(
+          %Result{board: board, ok?: true, reply: :ok},
+          {true, from},
+          s(state, tracker: tracker)
+        )
+    end
+  end
+
+  @impl true
   # Receiving a timeout for wich we have a reference in the state.
   def handle_info({:timeout, erl_tref, msg}, s(tref: {_, erl_tref}) = state) do
     # cleanup as the ref can no longer been expected to tick
@@ -96,14 +139,21 @@ defmodule Mogs.Board.Server do
     end
   end
 
+  @impl true
   def handle_info({:timeout, _, msg}, state) do
     Logger.debug("Ignored erl timeout #{inspect(msg)}")
     {:noreply, state, @timeout}
   end
 
   @todo "pass timeout to the board callback module"
+  @impl true
   def handle_info(:timeout, state) do
     Logger.debug("Ignored GenServer :timeout")
+    {:noreply, state, @timeout}
+  end
+
+  def handle_info({:DOWN, ref, :process, pid, reason} = msg, state) do
+    Logger.warn("Received monitor down message: #{inspect(msg)}")
     {:noreply, state, @timeout}
   end
 

@@ -1,8 +1,28 @@
 defmodule Mogs.Players.Tracker do
-  use GenServer, restart: :temporary
   require Record
   require Logger
   @sup Mogs.Players.Tracker.DynamicSupervisor
+  @default_player_timeout 30_000
+
+  @opts_schema %{timeout: [type: :integer, required: true, default: @default_player_timeout]}
+  def validate_opts(opts) when is_list(opts) do
+    KeywordValidator.validate(opts, @opts_schema)
+  end
+
+  def validate_parent_opts(:tracker, false) do
+    []
+  end
+
+  def validate_parent_opts(:tracker, opts) when is_list(opts) do
+    case validate_opts(opts) do
+      {:ok, _} -> []
+      {:error, invalid} -> Keyword.values(invalid)
+    end
+  end
+
+  def validate_parent_opts(:tracker, opts) do
+    ["Keyword required, got: #{inspect(opts)}"]
+  end
 
   # - p2ms: a map from 1 player_in to N monitor_refs
   # - m2p: a map from 1 monitor_ref to 1 player_id
@@ -17,32 +37,32 @@ defmodule Mogs.Players.Tracker do
   #   this process exits (starting a new timer). The player should be
   #   considered alive for 30 more seconds, so we need a way to
   #   discard the first timer as it is not relevant anymore.
+  @todo "remove client in schema"
+  @todo "change record name or use a man do differ from server s()"
   Record.defrecordp(:s, client: nil, p2ms: %{}, m2p: %{}, p2tref: %{}, ptimeout: nil)
   @type monitor :: reference()
   @type player_id :: term()
 
-  @default_player_timeout 30_000
   @hibernate_timeout 40_000
 
   @opts_schema %{
-    client: [type: :pid, required: true],
     timeout: [type: :integer, default: @default_player_timeout]
   }
 
-  @spec start_server() :: {:ok, pid}
-  @spec start_server(Keyword.t()) :: {:ok, pid}
-  def start_server(opts \\ [])
-
-  def start_server(opts) when is_list(opts) do
-    opts = Keyword.put_new(opts, :client, self())
-
-    DynamicSupervisor.start_child(@sup, {__MODULE__, opts})
+  def new(opts) do
+    opts = KeywordValidator.validate!(opts, @opts_schema)
+    s(ptimeout: Keyword.fetch!(opts, :timeout))
   end
 
   import GenServer, only: [call: 2]
 
-  def track(tracker, player_id, pid) when is_pid(pid) do
-    call(tracker, {:track, player_id, pid})
+  def track(s(p2ms: p2ms, m2p: m2p) = state, player_id, pid) when is_pid(pid) do
+    Logger.debug("Monitoring process #{inspect(pid)} for player #{inspect(player_id)}")
+    ref = Process.monitor(pid)
+    p2ms = Map.update(p2ms, player_id, [ref], fn refs -> [ref | refs] end)
+    m2p = Map.put(m2p, ref, player_id)
+    state = maybe_cancel_timeout(state, player_id)
+    s(state, p2ms: p2ms, m2p: m2p)
   end
 
   def forget(tracker, player_id) do
@@ -53,23 +73,6 @@ defmodule Mogs.Players.Tracker do
     with {:ok, opts} <- KeywordValidator.validate(opts, @opts_schema) do
       GenServer.start_link(__MODULE__, opts, debug: [])
     end
-  end
-
-  def init(opts) do
-    client = Keyword.fetch!(opts, :client)
-    # We will monitor the client as we will terminate if it exits.
-    ref = Process.monitor(client)
-
-    {:ok, s(client: {client, ref}, ptimeout: Keyword.fetch!(opts, :timeout)), @hibernate_timeout}
-  end
-
-  def handle_call({:track, player_id, pid}, _from, s(p2ms: p2ms, m2p: m2p) = state) do
-    Logger.debug("Monitoring process #{inspect(pid)} for player #{inspect(player_id)}")
-    ref = Process.monitor(pid)
-    p2ms = Map.update(p2ms, player_id, [ref], fn refs -> [ref | refs] end)
-    m2p = Map.put(m2p, ref, player_id)
-    state = maybe_cancel_timeout(state, player_id)
-    {:reply, :ok, s(state, p2ms: p2ms, m2p: m2p), @hibernate_timeout}
   end
 
   def handle_call({:forget, player_id}, _from, s(p2ms: p2ms, m2p: m2p, p2tref: p2tref) = state) do

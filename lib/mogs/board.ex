@@ -3,6 +3,8 @@ defmodule Mogs.Board do
   alias Mogs.Board.Command
   @callback load(id :: any, load_info :: any) :: {:ok, board :: any} | {:error, reason :: any}
   @callback handle_update(board :: any) :: {:ok, board :: any} | {:stop, reason :: any}
+  @callback handle_add_player(board :: any, player_id :: any, data :: any) ::
+              {:ok, board :: any} | {:error, reason :: any}
   @type board :: any
 
   @doc """
@@ -43,9 +45,14 @@ defmodule Mogs.Board do
       load_mode: [inclusion: [:sync, :async], default: :sync],
       supervisor: [type: :atom, default: Module.concat([board_mod, Supervisor])],
       registry: [type: :atom, default: Module.concat([board_mod, Server.Registry])],
-      server_sup: [type: :atom, default: Module.concat([board_mod, Server.DynamicSupervisor])]
+      server_sup: [type: :atom, default: Module.concat([board_mod, Server.DynamicSupervisor])],
+      tracker: [
+        default: false,
+        required: true
+      ]
     }
 
+    todo "Validate options at runtime sice we have quoted values here"
     opts = KeywordValidator.validate!(opts, using_schema)
 
     supervisor_name = Keyword.fetch!(opts, :supervisor)
@@ -81,6 +88,8 @@ defmodule Mogs.Board do
     the init function presence will be removed, check why.
     """
 
+    IO.inspect(opts, label: "OPTS")
+
     [
       quote location: :keep, bind_quoted: [opts: opts, __mogs__: __MODULE__] do
         @__mogs__ __mogs__
@@ -88,6 +97,8 @@ defmodule Mogs.Board do
         @__mogs__supervisor Keyword.fetch!(opts, :supervisor)
         @__mogs__registry Keyword.fetch!(opts, :registry)
         @__mogs__server_sup Keyword.fetch!(opts, :server_sup)
+        @__mogs__tracker_opts Keyword.fetch!(opts, :tracker)
+        @__mogs__is_tracking? !!Keyword.fetch!(opts, :tracker)
         @__mogs__has_supervisor? !!@__mogs__supervisor
         @__mogs__has_registry? !!@__mogs__registry
         @__mogs__has_server_sup? !!@__mogs__server_sup
@@ -124,6 +135,7 @@ defmodule Mogs.Board do
           """
           def start_server(id, opts \\ []) when is_list(opts) do
             opts = Keyword.put_new(opts, :name, __name__(id))
+            opts = Keyword.put_new(opts, :tracker, @__mogs__tracker_opts)
             @__mogs__.start_server(__MODULE__, @__mogs__server_sup, id, opts)
           end
         end
@@ -142,6 +154,35 @@ defmodule Mogs.Board do
 
         def send_command(id, command) do
           @__mogs__.send_command(__name__(id), command)
+        end
+
+        @doc """
+        The `player_id` and `data` arguments can be anything and will
+        be passed to your board `c:handle_add_player/3` callback.
+
+        #### If the tracker feature is enabled.
+
+        Although `player_id` and `data` can be anything, `player_id`
+        will be used to identify an unique player and should be kept
+        minimal.
+
+        If called with 3 arguments, the calling process pid will be
+        tracked. Since player are considered "lefters" after a
+        timeout, it is fine to initialize the tracking with a short
+        living process (e.g. from a Phoenix controller). On the other
+        end it is strongly unadvised to track long living processes
+        that do not "belong" to a single player.
+
+        The pid to track can be set as the 4th argument.
+        """
+        if @__mogs__is_tracking? do
+          def add_player(id, player_id, data, track \\ self())
+        else
+          def add_player(id, player_id, data, track \\ nil)
+        end
+
+        def add_player(id, player_id, data, track_pid) do
+          @__mogs__.add_player(__name__(id), player_id, data, track_pid)
         end
 
         @doc false
@@ -256,7 +297,8 @@ defmodule Mogs.Board do
       mod: [default: module],
       load_info: [default: nil],
       name: [],
-      timers: [type: :boolean, default: false]
+      timers: [type: :boolean, default: false],
+      tracker: [default: false, required: true]
     }
 
     with {:ok, opts} <- KeywordValidator.validate(opts, opts_schema) do
@@ -293,4 +335,20 @@ defmodule Mogs.Board do
       module to handle custom commands.
     """
   end
+
+  def add_player(name_or_pid, player_id, data, track_pid) do
+    IO.puts("lolilol")
+
+    IO.inspect(name_or_pid, label: :name_or_pid)
+    IO.inspect(GenServer.whereis(name_or_pid), label: "GenServer.whereis(name_or_pid)")
+
+    GenServer.call(name_or_pid, {:add_player, player_id, data, track_pid}, 100)
+    |> IO.inspect(label: "CALL add_player")
+  end
+end
+
+defmodule Board do
+  use TODO
+  @todo "0.0.0": "Remove this module"
+  use Mogs.Board, tracker: []
 end
