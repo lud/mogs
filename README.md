@@ -1,11 +1,14 @@
-# Mogs
+# Mogs – Multiplayer Online Game Server
 
-**TODO: Add description**
+Mogs is a libray to help build multiplayer games with elixir.
+
+The library is currently under development and is not ready for other
+developers to use.
 
 ## Installation
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `mogs` to your list of dependencies in `mix.exs`:
+The package can be installed by adding `mogs` to your list of
+dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -14,8 +17,3 @@ def deps do
   ]
 end
 ```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/mogs](https://hexdocs.pm/mogs).
-
