@@ -21,6 +21,7 @@ defmodule Mogs.Board.Server do
 
   # @todo allow to define the timeout from the `use Mogs.Board` call
   @timeout 60_000
+  @lifecycle {:continue, :lifecycle}
 
   @todo "Proper options validation must be done here, it is the last moment to set defaults"
 
@@ -70,8 +71,7 @@ defmodule Mogs.Board.Server do
   def init({mod, id, load_info, cfg, tracker}) do
     with :sync <- load_mode(mod),
          {:ok, board} <- load_board(mod, id, load_info) do
-      {:ok, s(id: id, mod: mod, board: board, cfg: cfg, tracker: tracker),
-       {:continue, :lifecycle}}
+      {:ok, s(id: id, mod: mod, board: board, cfg: cfg, tracker: tracker), @lifecycle}
     else
       :async ->
         {:ok, s(id: id, mod: mod, board: load_info, cfg: cfg, tracker: tracker),
@@ -85,7 +85,7 @@ defmodule Mogs.Board.Server do
   @impl true
   def handle_continue(:async_load, s(id: id, mod: mod, board: load_info) = state) do
     case load_board(mod, id, load_info) do
-      {:ok, board} -> {:noreply, s(state, board: board), {:continue, :lifecycle}}
+      {:ok, board} -> {:noreply, s(state, board: board), @lifecycle}
       {:error, reason} -> {:stop, reason}
     end
   end
@@ -209,7 +209,7 @@ defmodule Mogs.Board.Server do
       end
 
     case apply(mod, callback, args) do
-      {:ok, board} -> {:noreply, s(state, board: board), {:continue, :lifecycle}}
+      {:ok, board} -> {:noreply, s(state, board: board), @lifecycle}
       {:stop, reason} -> {:stop, reason, s(state, board: result.board)}
     end
   end
@@ -282,7 +282,9 @@ defmodule Mogs.Board.Server do
 
         {:handled, gen_tuple}
 
-      # delay for wich we already have an erlang timer running
+      # delay for wich we already have an erlang timer running.
+      # --beware--, the tq_ref is pinned but in "when" clause we are
+      # checking  erl_tref
       {:delay, ^tq_tref, _delay} when is_reference(erl_tref) ->
         :unhandled
 
@@ -297,10 +299,10 @@ defmodule Mogs.Board.Server do
         end
 
         # our message will just be to run the lifecycle.
+        IO.puts("delay: #{inspect(delay)}")
         new_erl_tref = :erlang.start_timer(delay, self(), :run_lifecycle)
 
-        {:handled,
-         {:noreply, s(state, tref: {new_tq_ref, new_erl_tref}), {:continue, :lifecycle}}}
+        {:handled, {:noreply, s(state, tref: {new_tq_ref, new_erl_tref}), @lifecycle}}
 
       # now we have a new state, so we must tell the lifecycle handler that
       # we handled something. we will just loop on the lifecycle

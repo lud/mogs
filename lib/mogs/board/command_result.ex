@@ -32,6 +32,10 @@ defmodule Mogs.Board.Command.Result do
     return(add(result, k, v), keyword)
   end
 
+  def return_board(board, keyword \\ []) do
+    return([{:board, board} | keyword])
+  end
+
   defp add(result, :board, board) do
     %M{result | board: board}
   end

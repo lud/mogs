@@ -14,7 +14,9 @@ defmodule Mogs.Board.Command do
 
   defmacro __using__(_) do
     quote do
-      import Mogs.Board.Command.Result, only: [return: 1]
+      import Mogs.Board.Command.Result,
+        only: [return: 1, return_board: 1, return_board: 2],
+        warn: false
 
       @behaviour unquote(__MODULE__)
 

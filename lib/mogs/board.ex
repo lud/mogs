@@ -147,6 +147,23 @@ defmodule Mogs.Board do
           GenServer.stop(__name__(id), reason, timeout)
         end
 
+        if @__mogs__has_registry? do
+          def whereis_server(id) do
+            Registry.whereis_name({@__mogs__registry, id})
+          end
+
+          def alive?(id) do
+            case whereis_server(id) do
+              :undefined -> false
+              pid -> true
+            end
+          end
+        end
+
+        def server_alive?(id) do
+          GenServer.alive?()
+        end
+
         def read_state(id) do
           read_state(id, fn state -> state end)
         end
