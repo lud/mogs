@@ -108,7 +108,7 @@ defmodule Mogs.Board.Server do
   def handle_call({:add_player, player_id, data, pid}, from, s(board: board, mod: mod) = state) do
     case mod.handle_add_player(board, player_id, data) do
       {:error, _} = err ->
-        todo "Should we run lifecycle on error? Maybe just handle result"
+        todo "Should we run lifecycle on error? Maybe just handle result. But erl timout is already running"
         {:reply, err, state, @timeout}
 
       {:ok, board} ->
@@ -126,6 +126,23 @@ defmodule Mogs.Board.Server do
           s(state, tracker: tracker)
         )
     end
+  end
+
+  @impl true
+  def handle_call({:remove_player, player_id, reason, clear?}, from, state) do
+    s(tracker: tracker) = state
+
+    state =
+      case clear? do
+        true ->
+          tracker = Tracker.forget(tracker, player_id)
+          s(state, tracker: tracker)
+
+        false ->
+          state
+      end
+
+    player_removal(player_id, reason, {true, from}, state)
   end
 
   def handle_call({:track_player, player_id, pid}, _from, s(tracker: tracker) = state) do
@@ -151,20 +168,8 @@ defmodule Mogs.Board.Server do
         {:noreply, state, @timeout}
 
       {:player_timeout, player_id, tracker} ->
-        s(board: board, mod: mod) = state
         state = s(state, tracker: tracker)
-
-        case mod.handle_player_timeout(board, player_id) do
-          {:ok, board} ->
-            handle_result(
-              %Result{board: board, ok?: true, reply: :ok},
-              false,
-              state
-            )
-
-          {:stop, reason} ->
-            {:stop, reason, state}
-        end
+        player_removal(player_id, :timeout, false, state)
     end
   end
 
@@ -309,6 +314,20 @@ defmodule Mogs.Board.Server do
 
       :empty ->
         :unhandled
+    end
+  end
+
+  defp player_removal(player_id, reason, reply_info, s(mod: mod, board: board) = state) do
+    case mod.handle_remove_player(board, player_id, reason) do
+      {:ok, board} ->
+        handle_result(
+          %Result{board: board, ok?: true, reply: :ok},
+          reply_info,
+          state
+        )
+
+      {:stop, reason} ->
+        {:stop, reason, state}
     end
   end
 end

@@ -23,10 +23,17 @@ defmodule Mogs.Players.TrackerTest do
       end
     end
 
-    def handle_player_timeout(board, player_id) do
+    def handle_remove_player(board, player_id, reason) do
       %__MODULE__{test_process_pid: pid} = board
-      send(pid, {:player_left, player_id})
-      {:stop, :normal}
+      send(pid, {:player_removed, player_id, reason})
+      players = Map.delete(board.players, player_id)
+      {:ok, %{board | players: players}}
+    end
+
+    def handle_command(:list_players, board) do
+      IO.inspect(board, label: "BOARD")
+      list = Map.keys(board.players) |> Enum.sort()
+      Mogs.Board.Command.Result.return(board: board, reply: list)
     end
   end
 
@@ -41,19 +48,27 @@ defmodule Mogs.Players.TrackerTest do
 
     assert {:ok, pid} = TrackBoard.start_server(id, load_info: {:parent, self()})
 
-    Process.sleep(1000)
-
     assert pid === GenServer.whereis(TrackBoard.__name__(id))
 
     spawn_tracked_player = fn player_id ->
-      spawn(fn ->
-        case TrackBoard.add_player(id, player_id, :some_data) do
-          :ok -> :ok
-          {:error, :already_in} -> TrackBoard.track_player(id, player_id)
-        end
+      ref = make_ref()
+      this = self()
 
-        Process.sleep(:infinity)
-      end)
+      pid =
+        spawn(fn ->
+          case TrackBoard.add_player(id, player_id, :some_data) do
+            :ok -> :ok
+            {:error, :already_in} -> TrackBoard.track_player(id, player_id)
+          end
+
+          send(this, {:ack, ref})
+
+          Process.sleep(:infinity)
+        end)
+
+      receive do
+        {:ack, ^ref} -> pid
+      end
     end
 
     # Then we will start/kill the player multiple times. As long
@@ -64,11 +79,21 @@ defmodule Mogs.Players.TrackerTest do
 
     this = self()
 
+    player_1 = spawn_tracked_player.(:p1)
+
+    assert [:p1] = TrackBoard.send_command(id, :list_players)
+
     spawn(fn ->
-      for _ <- 1..10 do
-        player_1 = spawn_tracked_player.(:p1)
+      for i <- 1..10 do
+        player_2 = spawn_tracked_player.(:p2)
+
+        if i == 1 do
+          # the list is sorted by the board
+          assert [:p1, :p2] = TrackBoard.send_command(id, :list_players)
+        end
+
         Process.sleep(wait_time)
-        Process.exit(player_1, :kill)
+        Process.exit(player_2, :kill)
       end
 
       send(this, :finished_iteration)
@@ -83,10 +108,15 @@ defmodule Mogs.Players.TrackerTest do
 
     # now we should receive the left message but not before the actual player
     # timeout time
-    refute_received({:player_left, :p1}, "Received timeout too early")
-    assert_receive({:player_left, :p1}, @test_timeout + 50)
-    Process.sleep(100)
-    # The board stops explicitly
-    assert false === Process.alive?(pid)
+    refute_received({:player_removed, :p2, :timeout}, "Received timeout too early")
+    assert_receive({:player_removed, :p2, :timeout}, @test_timeout + 50)
+
+    # Player 2 should not be in the board anymore
+    assert [:p1] = TrackBoard.send_command(id, :list_players)
+
+    # Manual remove of player 1
+    TrackBoard.remove_player(id, :p1, _reason = :left)
+    assert_receive({:player_removed, :p1, :left})
+    assert [] = TrackBoard.send_command(id, :list_players)
   end
 end

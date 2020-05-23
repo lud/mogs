@@ -64,11 +64,7 @@ defmodule Mogs.Players.Tracker do
     s(state, p2ms: p2ms, m2p: m2p)
   end
 
-  # def forget(tracker, player_id) do
-  #   call(tracker, {:forget, player_id})
-  # end
-
-  def handle_call({:forget, player_id}, _from, s(p2ms: p2ms, m2p: m2p, p2tref: p2tref) = state) do
+  def forget(s(p2ms: p2ms, m2p: m2p) = state, player_id) do
     {p2ms, m2p} =
       case Map.pop(p2ms, player_id) do
         {nil, _} ->
@@ -82,9 +78,7 @@ defmodule Mogs.Players.Tracker do
       end
 
     # Delete the running timeout if any
-    state = maybe_cancel_timeout(state, player_id)
-
-    {:reply, :ok, s(state, p2ms: p2ms, m2p: m2p, p2tref: p2tref), @hibernate_timeout}
+    state = maybe_cancel_timeout(s(state, p2ms: p2ms, m2p: m2p), player_id)
   end
 
   # Cancels any timeout present in p2tref for player_id and also deletes

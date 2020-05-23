@@ -6,7 +6,7 @@ defmodule Mogs.Board do
   @todo "Define callbacks in different 'plugin' behaviours"
   @callback handle_add_player(board :: any, player_id :: any, data :: any) ::
               {:ok, board :: any} | {:error, reason :: any}
-  @callback handle_player_timeout(board :: any, player_id :: any) ::
+  @callback handle_remove_player(board :: any, player_id :: any, reason :: any) ::
               {:ok, board :: any} | {:stop, reason :: any}
   @type board :: any
 
@@ -206,6 +206,16 @@ defmodule Mogs.Board do
         end
 
         if @__mogs__is_tracking? do
+          def remove_player(id, player_id, reason, clear_tracking? \\ true)
+        else
+          def remove_player(id, player_id, reason, clear_tracking? \\ false)
+        end
+
+        def remove_player(id, player_id, reason, clear_tracking?) do
+          @__mogs__.remove_player(__name__(id), player_id, reason, clear_tracking?)
+        end
+
+        if @__mogs__is_tracking? do
           @doc """
           Add a pid to the players tracking system. Unlinke add_player, it will
           no call your `c:handle_add_player/3` callback, nor any other callback.
@@ -370,6 +380,10 @@ defmodule Mogs.Board do
 
   def add_player(name_or_pid, player_id, data, pid) when is_pid(pid) or is_nil(pid) do
     GenServer.call(name_or_pid, {:add_player, player_id, data, pid})
+  end
+
+  def remove_player(name_or_pid, player_id, reason, clear_tracking?) do
+    GenServer.call(name_or_pid, {:remove_player, player_id, reason, clear_tracking?})
   end
 
   def track_player(name_or_pid, player_id, pid) when is_pid(pid) do
