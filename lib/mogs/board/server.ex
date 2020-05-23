@@ -101,31 +101,34 @@ defmodule Mogs.Board.Server do
 
   @impl true
   def handle_call({:run_command, command}, from, s(board: board, mod: mod) = state) do
-    handle_result(mod.handle_command(command, board), {true, from}, state)
+    result = mod.handle_command(command, board)
+    reply_result(result, from)
+    handle_result(result, state)
   end
 
   @impl true
   def handle_call({:add_player, player_id, data, pid}, from, s(board: board, mod: mod) = state) do
-    case mod.handle_add_player(board, player_id, data) do
-      {:error, _} = err ->
-        todo "Should we run lifecycle on error? Maybe just handle result. But erl timout is already running"
-        {:reply, err, state, @timeout}
+    result =
+      board
+      |> mod.handle_add_player(player_id, data)
+      |> Result.with_defaults(board: board, reply: :ok)
 
-      {:ok, board} ->
-        tracker = s(state, :tracker)
-
+    state =
+      if result.ok? do
         tracker =
           case pid do
-            nil -> tracker
-            pid when is_pid(pid) -> Tracker.track(tracker, player_id, pid)
-          end
+            nil ->
+              state
 
-        handle_result(
-          %Result{board: board, ok?: true, reply: :ok},
-          {true, from},
-          s(state, tracker: tracker)
-        )
-    end
+            pid when is_pid(pid) ->
+              s(state, tracker: Tracker.track(s(state, :tracker), player_id, pid))
+          end
+      else
+        state
+      end
+
+    reply_result(result, from)
+    handle_result(result, state)
   end
 
   @impl true
@@ -142,9 +145,12 @@ defmodule Mogs.Board.Server do
           state
       end
 
-    player_removal(player_id, reason, {true, from}, state)
+    result = player_removal(player_id, reason, state)
+    reply_result(result, from)
+    handle_result(result, state)
   end
 
+  @impl true
   def handle_call({:track_player, player_id, pid}, _from, s(tracker: tracker) = state) do
     tracker = Tracker.track(tracker, player_id, pid)
     {:reply, :ok, s(state, tracker: tracker), @timeout}
@@ -169,7 +175,8 @@ defmodule Mogs.Board.Server do
 
       {:player_timeout, player_id, tracker} ->
         state = s(state, tracker: tracker)
-        player_removal(player_id, :timeout, false, state)
+        result = player_removal(player_id, :timeout, state)
+        handle_result(result, state)
     end
   end
 
@@ -197,29 +204,39 @@ defmodule Mogs.Board.Server do
     end
   end
 
-  defp handle_result(%Result{} = result, reply_info, s(mod: mod) = state) do
-    # First, send any command reply if needed
-    case reply_info do
-      false -> false
-      {true, gen_from} -> GenServer.reply(gen_from, result.reply)
-    end
+  defp reply_result(result, from) do
+    GenServer.reply(from, result.reply)
+  end
 
-    {callback, args} =
+  defp handle_result(%Result{} = result, s(mod: mod) = state) do
+    # Result has mutiple infos
+    # - reply : handled outside of this function, in handle_call
+    # - error (ok? :: boolean, reason :: any): We decide if we call
+    #   handle_update or handle_error
+    # - board: we will put the result board into our state
+    # - stop: false | {true, reason :: any}
+
+    transformed =
       case result.ok? do
-        true ->
-          {:handle_update, [result.board]}
-
-        false ->
-          {:handle_error, [result.reason, result.board]}
+        true -> mod.handle_update(result.board)
+        false -> mod.handle_error(result.reason, result.board)
       end
 
-    case apply(mod, callback, args) do
-      {:ok, board} -> {:noreply, s(state, board: board), @lifecycle}
-      {:stop, reason} -> {:stop, reason, s(state, board: result.board)}
+    result =
+      case transformed do
+        {:ok, board} -> %Result{result | board: board}
+        {:stop, reason} -> %Result{result | stop: {true, reason}}
+      end
+
+    state = s(state, board: result.board)
+
+    case result.stop do
+      {true, reason} -> {:stop, reason, state}
+      false -> {:noreply, state, @lifecycle}
     end
   end
 
-  defp handle_result(not_a_result, _, state) do
+  defp handle_result(not_a_result, state) do
     Logger.error("Command returned invalid result: #{inspect(not_a_result)}")
     {:stop, {:bad_command_return, not_a_result}, state}
   end
@@ -247,6 +264,7 @@ defmodule Mogs.Board.Server do
   #
   # Currently we only have one function
   defp do_lifecycle(state) do
+    IO.puts("LIFECYCLE")
     # Syntax with multiple lifetime functions:
     # with :unhandled <- lf_run_next_timer(state),
     #      :unhandled <- fun_2(state),
@@ -272,18 +290,14 @@ defmodule Mogs.Board.Server do
   end
 
   defp lf_run_next_timer(s(cfg: rcfg(timers: true)) = state) do
-    s(tref: {tq_tref, erl_tref}, board: board) = state
+    s(tref: {tq_tref, erl_tref}, board: board, mod: mod) = state
 
     case Mogs.Timers.pop_timer(board) do
       {:ok, entry, board} ->
-        gen_tuple =
-          case TimeQueue.value(entry) do
-            {:mogs_command_timer, command_mod, data} ->
-              handle_result(command_mod.handle_timer(data, board), false, s(state, board: board))
-
-            other ->
-              {:stop, {:bad_timer, other}, s(state, board: board)}
-          end
+        timer = TimeQueue.value(entry)
+        IO.inspect(timer, label: "TRY TIMER")
+        result = mod.handle_timer(timer, board)
+        gen_tuple = handle_result(result, s(state, board: board))
 
         {:handled, gen_tuple}
 
@@ -317,17 +331,10 @@ defmodule Mogs.Board.Server do
     end
   end
 
-  defp player_removal(player_id, reason, reply_info, s(mod: mod, board: board) = state) do
-    case mod.handle_remove_player(board, player_id, reason) do
-      {:ok, board} ->
-        handle_result(
-          %Result{board: board, ok?: true, reply: :ok},
-          reply_info,
-          state
-        )
-
-      {:stop, reason} ->
-        {:stop, reason, state}
-    end
+  defp player_removal(player_id, reason, s(mod: mod, board: board) = state) do
+    result =
+      board
+      |> mod.handle_remove_player(player_id, reason)
+      |> Result.with_defaults(board: board, reply: :ok)
   end
 end

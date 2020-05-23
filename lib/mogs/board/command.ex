@@ -56,14 +56,24 @@ defmodule Mogs.Board.Command do
 
   def run_command(%mod{} = command, board) do
     # We do not have much to do here. Just let the server crash
-    case mod.run(command, board) do
-      %Result{} = result ->
-        result
-        |> Result.put_default_board(board)
+    mod.run(command, board)
+    |> cast_result({mod, :run, [command, board]}, board)
+  end
 
-      other ->
-        reason = {:bad_return, {mod, :run, [command, board]}, other}
-        {:stop, {:error, reason}, reason, board}
-    end
+  def run_timer(mod, data, board) do
+    IO.inspect({mod, data}, label: "HANDLE TIMER")
+
+    mod.handle_timer(data, board)
+    |> cast_result({mod, :handle_timer, [data, board]}, board)
+  end
+
+  defp cast_result(%{__partial__: true} = partial, _, board) do
+    defaults = %{__partial__: true, board: board, reply: :ok}
+    Result.merge(defaults, partial)
+  end
+
+  defp cast_result(other, called, board) do
+    reason = {:bad_return, called, other}
+    Result.merge(%{__partial__: true, board: board}, stop: reason, error: reason)
   end
 end

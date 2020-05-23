@@ -6,6 +6,7 @@ defmodule Mogs.Players.TrackerTest do
 
   defmodule TrackBoard do
     defstruct players: %{}, test_process_pid: nil
+    require Logger
     use Mogs.Board, tracker: [timeout: 100]
 
     def load(_, {:parent, pid} = _load_info) when is_pid(pid) do
@@ -27,13 +28,23 @@ defmodule Mogs.Players.TrackerTest do
       %__MODULE__{test_process_pid: pid} = board
       send(pid, {:player_removed, player_id, reason})
       players = Map.delete(board.players, player_id)
-      {:ok, %{board | players: players}}
+
+      Logger.warn("Removing player #{player_id}")
+
+      case map_size(players) do
+        0 ->
+          Logger.warn("No more players in #{__MODULE__}, stopping")
+          {:stop, :normal}
+
+        _ ->
+          {:ok, %{board | players: players}}
+      end
     end
 
     def handle_command(:list_players, board) do
       IO.inspect(board, label: "BOARD")
       list = Map.keys(board.players) |> Enum.sort()
-      Mogs.Board.Command.Result.return(board: board, reply: list)
+      Mogs.Board.Command.Result.merge([], board: board, reply: list)
     end
   end
 
@@ -50,27 +61,6 @@ defmodule Mogs.Players.TrackerTest do
 
     assert pid === GenServer.whereis(TrackBoard.__name__(id))
 
-    spawn_tracked_player = fn player_id ->
-      ref = make_ref()
-      this = self()
-
-      pid =
-        spawn(fn ->
-          case TrackBoard.add_player(id, player_id, :some_data) do
-            :ok -> :ok
-            {:error, :already_in} -> TrackBoard.track_player(id, player_id)
-          end
-
-          send(this, {:ack, ref})
-
-          Process.sleep(:infinity)
-        end)
-
-      receive do
-        {:ack, ^ref} -> pid
-      end
-    end
-
     # Then we will start/kill the player multiple times. As long
     # as a player is re-tracked within the timeout limit, we will
     # receive no message
@@ -79,13 +69,13 @@ defmodule Mogs.Players.TrackerTest do
 
     this = self()
 
-    player_1 = spawn_tracked_player.(:p1)
+    player_1 = spawn_tracked_player(id, :p1)
 
     assert [:p1] = TrackBoard.send_command(id, :list_players)
 
     spawn(fn ->
       for i <- 1..10 do
-        player_2 = spawn_tracked_player.(:p2)
+        player_2 = spawn_tracked_player(id, :p2)
 
         if i == 1 do
           # the list is sorted by the board
@@ -117,6 +107,27 @@ defmodule Mogs.Players.TrackerTest do
     # Manual remove of player 1
     TrackBoard.remove_player(id, :p1, _reason = :left)
     assert_receive({:player_removed, :p1, :left})
-    assert [] = TrackBoard.send_command(id, :list_players)
+    refute TrackBoard.alive?(id)
+  end
+
+  defp spawn_tracked_player(board_id, player_id) do
+    ref = make_ref()
+    this = self()
+
+    pid =
+      spawn(fn ->
+        case TrackBoard.add_player(board_id, player_id, :some_data) do
+          :ok -> :ok
+          {:error, :already_in} -> TrackBoard.track_player(board_id, player_id)
+        end
+
+        send(this, {:ack, ref})
+
+        Process.sleep(:infinity)
+      end)
+
+    receive do
+      {:ack, ^ref} -> pid
+    end
   end
 end

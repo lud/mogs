@@ -3,11 +3,16 @@ defmodule Mogs.Board do
   alias Mogs.Board.Command
   @callback load(id :: any, load_info :: any) :: {:ok, board :: any} | {:error, reason :: any}
   @callback handle_update(board :: any) :: {:ok, board :: any} | {:stop, reason :: any}
+  @callback handle_error(reason :: any, board :: any) ::
+              {:ok, board :: any} | {:stop, reason :: any}
   @todo "Define callbacks in different 'plugin' behaviours"
   @callback handle_add_player(board :: any, player_id :: any, data :: any) ::
               {:ok, board :: any} | {:error, reason :: any}
   @callback handle_remove_player(board :: any, player_id :: any, reason :: any) ::
               {:ok, board :: any} | {:stop, reason :: any}
+
+  @callback handle_command(command :: any, board :: any) :: Mogs.Board.Command.Result.t()
+  @callback handle_timer(command :: any, board :: any) :: Mogs.Board.Command.Result.t()
   @type board :: any
 
   @doc """
@@ -91,8 +96,6 @@ defmodule Mogs.Board do
     the init function presence will be removed, check why.
     """
 
-    IO.inspect(opts, label: "OPTS")
-
     [
       quote location: :keep, bind_quoted: [opts: opts, __mogs__: __MODULE__] do
         @__mogs__ __mogs__
@@ -158,10 +161,6 @@ defmodule Mogs.Board do
               pid -> true
             end
           end
-        end
-
-        def server_alive?(id) do
-          GenServer.alive?()
         end
 
         def read_state(id) do
@@ -230,6 +229,11 @@ defmodule Mogs.Board do
         @doc false
         def handle_command(command, board) do
           @__mogs__.__handle_command__(command, board)
+        end
+
+        @doc false
+        def handle_timer(timer, board) do
+          @__mogs__.__handle_timer__(timer, board)
         end
 
         @doc false
@@ -360,21 +364,43 @@ defmodule Mogs.Board do
   end
 
   @doc false
-  def __handle_command__(%_{} = command, board) do
+  def __handle_command__(%_struct{} = command, board) do
     Command.run_command(command, board)
   end
 
   def __handle_command__(command, _board) do
     raise ArgumentError, """
 
-      Bad command format. Default handle_command/2 implementation only accepts
-      struct commands and will call Mogs.Board.Command.run_command/2 with the
-      given struct and board.
+      Bad command format. Default handle_command/2 implementation only
+      accepts struct commands and will call
+      Mogs.Board.Command.run_command/2 with the given struct and
+      board.
 
       Command received: #{inspect(command)}
 
-      It is possible to define a custom handle_command/2 function in you board
-      module to handle custom commands.
+      It is possible to define a custom handle_command/2 function in
+      you board module to handle custom commands.
+    """
+  end
+
+  @doc false
+
+  def __handle_timer__({:mogs_command_timer, command_mod, data}, board) do
+    Command.run_timer(command_mod, data, board)
+  end
+
+  def __handle_timer__(timer, _board) do
+    raise ArgumentError, """
+
+      Bad timer format. Default handle_timer/2 implementation only
+      accepts tuples like `{:mogs_command_timer, command_mod, data}`
+      where `command_mod` is a module that exports a handle_timer/2
+      function.
+
+      Timer received: #{inspect(timer)}
+
+      It is possible to define a custom handle_timer/2 function in you
+      board module to handle custom timers.
     """
   end
 

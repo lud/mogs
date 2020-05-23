@@ -23,20 +23,24 @@ defmodule Mogs.BoardTest do
     use Mogs.Board, load_mode: :async
     import Mogs.Board.Command.Result
 
+    require TestHelpers.NoWarnings
+    TestHelpers.NoWarnings.fake_fun(:handle_add_player, 3)
+    TestHelpers.NoWarnings.fake_fun(:handle_remove_player, 3)
+
     def load(_id, info) do
       {:ok, info}
     end
 
     def handle_command(:dummy, board) do
-      return(reply: :ok, board: board)
+      cast_return(reply: :ok, board: board)
     end
 
     def handle_command(:get_the_state, board) do
-      return(reply: board, board: board)
+      cast_return(reply: board, board: board)
     end
 
-    def handle_command({:stop_me, reply}, board) do
-      return(reply: reply, board: :GOT_TO_STOP)
+    def handle_command({:stop_me, reply}, _board) do
+      cast_return(reply: reply, board: :GOT_TO_STOP)
     end
 
     def handle_update(:GOT_TO_STOP) do
@@ -71,9 +75,9 @@ defmodule Mogs.BoardTest do
 
   test "can handle a tuple command" do
     id = :id_2
-    assert {:ok, pid} = MyBoard.start_server(id, load_info: :some_state)
+    assert {:ok, pid} = MyBoard.start_server(id, load_info: :some_state_tup)
     assert :ok = MyBoard.send_command(id, :dummy)
-    assert :some_state = MyBoard.send_command(id, :get_the_state)
+    assert :some_state_tup = MyBoard.send_command(id, :get_the_state)
     assert true === Process.alive?(pid)
     assert :bye = MyBoard.send_command(id, {:stop_me, :bye})
     Process.sleep(100)
@@ -82,6 +86,11 @@ defmodule Mogs.BoardTest do
 
   defmodule ComBoard do
     use Mogs.Board
+
+    require TestHelpers.NoWarnings
+    TestHelpers.NoWarnings.fake_fun(:handle_add_player, 3)
+    TestHelpers.NoWarnings.fake_fun(:handle_remove_player, 3)
+    TestHelpers.NoWarnings.handle_update()
 
     defstruct var1: nil
 
@@ -110,26 +119,30 @@ defmodule Mogs.BoardTest do
 
   test "can handle a struct command" do
     id = __ENV__.line
-    assert {:ok, pid} = ComBoard.start_server(id, load_info: :some_state)
+    assert {:ok, pid} = ComBoard.start_server(id, load_info: :some_state_atom)
 
     assert :ok ===
              ComBoard.send_command(id, %TransformState{
                trans: fn board -> board |> to_string |> String.upcase() end
              })
 
-    assert "SOME_STATE" = ComBoard.read_state(id)
+    assert "SOME_STATE_ATOM" = ComBoard.read_state(id)
 
-    assert ["SOME", "STATE"] ===
+    assert ["SOME", "STATE", "ATOM"] ===
              ComBoard.send_command(id, %TransformReply{trans: &String.split(&1, "_")})
 
     # A command that does not return(board: ...) should keep the orginal board
-    assert "SOME_STATE" = ComBoard.read_state(id)
+    assert "SOME_STATE_ATOM" = ComBoard.read_state(id)
   end
 
   defmodule TimedBoard do
     use Mogs.Board
     require Logger
     @db Mogs.BoardTest.DB
+
+    require TestHelpers.NoWarnings
+    TestHelpers.NoWarnings.fake_fun(:handle_add_player, 3)
+    TestHelpers.NoWarnings.fake_fun(:handle_remove_player, 3)
 
     @derive {Mogs.Timers.Store, :timers}
     defstruct id: nil, timers: Mogs.Timers.new()
@@ -162,6 +175,7 @@ defmodule Mogs.BoardTest do
     end
 
     def handle_timer({pid, name}, board) do
+      IO.puts("send #{inspect({:handled!, name})}")
       send(pid, {:handled!, name})
       return(board: board)
     end
@@ -169,14 +183,18 @@ defmodule Mogs.BoardTest do
 
   test "a command can set a timer and handle it" do
     id = __ENV__.line
-    assert {:ok, pid} = TimedBoard.start_server(id, load_info: :some_state, timers: true)
+    assert {:ok, pid} = TimedBoard.start_server(id, load_info: :some_state_timers, timers: true)
     assert pid === GenServer.whereis(TimedBoard.__name__(id))
 
     TimedBoard.send_command(id, %SetTimer{test_pid: self()})
 
-    assert_next_receive({:handled!, :timer_1}, 1000)
-    assert_next_receive({:handled!, :timer_2}, 1000)
-    assert_next_receive({:handled!, :timer_3}, 1000)
+    # Process.sleep(2000)
+    :erlang.process_info(self(), :messages) |> IO.inspect()
+
+    # raise "fuck"
+    assert_next_receive({:handled!, :timer_1}, 400)
+    assert_next_receive({:handled!, :timer_2}, 400)
+    assert_next_receive({:handled!, :timer_3}, 400)
 
     TimedBoard.read_state(id, fn board ->
       assert 0 = TimeQueue.size(board.timers)
@@ -187,7 +205,7 @@ defmodule Mogs.BoardTest do
 
   test "a board can stop and restart and still handle timers" do
     id = __ENV__.line
-    assert {:ok, pid} = TimedBoard.start_server(id, load_info: :some_state, timers: true)
+    assert {:ok, pid} = TimedBoard.start_server(id, load_info: :some_state_timers_2, timers: true)
     TimedBoard.send_command(id, %SetTimer{test_pid: self()})
     pid = GenServer.whereis(TimedBoard.__name__(id))
     # We will kill the board, and still expect to receive our timers,
@@ -198,9 +216,9 @@ defmodule Mogs.BoardTest do
     # After beeing restated by the supervisor and loading the
     # persisted state, we expect the server to run a lifecyle loop and
     # call our timers
-    assert_receive({:handled!, :timer_1}, 1000)
-    assert_receive({:handled!, :timer_2}, 1000)
-    assert_receive({:handled!, :timer_3}, 1000)
+    assert_receive({:handled!, :timer_1}, 400)
+    assert_receive({:handled!, :timer_2}, 400)
+    assert_receive({:handled!, :timer_3}, 400)
 
     # sync_cub()
   end
@@ -225,6 +243,12 @@ defmodule Mogs.BoardTest do
   defmodule AnomBoard do
     use Mogs.Board, load_mode: :async, registry: false, server_sup: false, supervisor: false
 
+    require TestHelpers.NoWarnings
+    TestHelpers.NoWarnings.__name__()
+    TestHelpers.NoWarnings.fake_fun(:handle_add_player, 3)
+    TestHelpers.NoWarnings.fake_fun(:handle_remove_player, 3)
+    TestHelpers.NoWarnings.handle_update()
+
     def load(_id, load_info) do
       {:ok, load_info}
     end
@@ -244,7 +268,7 @@ defmodule Mogs.BoardTest do
                id: id,
                mod: AnomBoard,
                name: nil,
-               load_info: :some_state
+               load_info: :some_state_anon
              )
 
     assert pid === AnomBoard.__name__(pid)
@@ -253,7 +277,7 @@ defmodule Mogs.BoardTest do
     assert true = Process.alive?(pid)
 
     # We can still use the functions created in AnomBoard with a pid
-    assert :some_state = AnomBoard.read_state(pid)
+    assert :some_state_anon = AnomBoard.read_state(pid)
 
     assert :ok = GenServer.stop(pid)
     assert false === Process.alive?(pid)
