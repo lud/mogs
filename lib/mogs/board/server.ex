@@ -115,14 +115,17 @@ defmodule Mogs.Board.Server do
 
     state =
       if result.ok? do
-        tracker =
-          case pid do
-            nil ->
-              state
+        case pid do
+          nil ->
+            state
 
-            pid when is_pid(pid) ->
-              s(state, tracker: Tracker.track(s(state, :tracker), player_id, pid))
-          end
+          pid when is_pid(pid) ->
+            tracker =
+              s(state, :tracker)
+              |> Tracker.track(player_id, pid)
+
+            s(state, tracker: tracker)
+        end
       else
         state
       end
@@ -329,10 +332,9 @@ defmodule Mogs.Board.Server do
     end
   end
 
-  defp player_removal(player_id, reason, s(mod: mod, board: board) = state) do
-    result =
-      board
-      |> mod.handle_remove_player(player_id, reason)
-      |> Result.with_defaults(board: board, reply: :ok)
+  defp player_removal(player_id, reason, s(mod: mod, board: board)) do
+    board
+    |> mod.handle_remove_player(player_id, reason)
+    |> Result.with_defaults(board: board, reply: :ok)
   end
 end

@@ -26,8 +26,6 @@ defmodule Mogs.Players.Tracker do
   @type monitor :: reference()
   @type player_id :: term()
 
-  @hibernate_timeout 40_000
-
   @opts_schema %{
     timeout: [type: :integer, default: @default_player_timeout]
   }
@@ -64,7 +62,7 @@ defmodule Mogs.Players.Tracker do
       end
 
     # Delete the running timeout if any
-    state = maybe_cancel_timeout(s(state, p2ms: p2ms, m2p: m2p), player_id)
+    maybe_cancel_timeout(s(state, p2ms: p2ms, m2p: m2p), player_id)
   end
 
   # Cancels any timeout present in p2tref for player_id and also deletes

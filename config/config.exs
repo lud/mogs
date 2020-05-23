@@ -5,4 +5,10 @@ use Mix.Config
 #   handle_sasl_reports: false,
 #   handle_otp_reports: false
 
-config :todo, print: :all, persist: true
+if function_exported?(Mix, :env, 0) and
+     Mix.Project.get() == Mogs.MixProject and
+     Mix.env() == :dev do
+  config :todo, print: :silent, persist: true
+else
+  config :todo, print: :silent, persist: false
+end

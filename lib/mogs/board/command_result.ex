@@ -133,7 +133,7 @@ defmodule Mogs.Board.Command.Result do
     %{ok?: false, reason: reason, reply: err}
   end
 
-  defp cast_tuple({:stop, reason} = err) do
+  defp cast_tuple({:stop, reason}) do
     %{stop: {true, reason}}
   end
 

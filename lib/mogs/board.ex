@@ -45,51 +45,14 @@ defmodule Mogs.Board do
   - `:server_sup` – The name for the generated `DynamicSupervisor`
     module that will supervise each `Mogs.Board.Server` server
     process. Defaults to `__MODULE__.Server.DynamicSupervisor`.
+  - `:tracker` – Options for the tracker:
+    Keep unset or pass `nil` to disable player tracking.
+    Currently only one option is supported:
+    - `:timeout` – Time in milliseconds before considering an user
+       has left the game, _i.e._ where the user has no tracked process
+       alive. `c:handle_remove_player/3` is called after the timeout
   """
   defmacro __using__(opts) do
-    board_mod = __CALLER__.module
-
-    # using_schema = %{
-    #   load_mode: [inclusion: [:sync, :async], default: :sync],
-    #   supervisor: [type: :atom, default: Module.concat([board_mod, Supervisor])],
-    #   registry: [type: :atom, default: Module.concat([board_mod, Server.Registry])],
-    #   server_sup: [type: :atom, default: Module.concat([board_mod, Server.DynamicSupervisor])],
-    #   tracker: [
-    #     default: false,
-    #     required: true
-    #   ]
-    # }
-
-    # opts = KeywordValidator.validate!(opts, using_schema)
-
-    # supervisor_name = Keyword.fetch!(opts, :supervisor)
-
-    todo "Move code to a Mogs.Board.Supervisor module and here just forward the child_spec call"
-
-    # if !!supervisor_name do
-    #   supervisor_ast =
-    #     quote location: :keep, bind_quoted: [board_mod: board_mod] do
-    #       @board_mod board_mod
-
-    #       def child_spec(opts) do
-    #         children = @board_mod.__mogs__(:services)
-
-    #         default = %{
-    #           id: __MODULE__,
-    #           start:
-    #             {Supervisor, :start_link, [children, [strategy: :rest_for_one, name: __MODULE__]]},
-    #           type: :supervisor
-    #         }
-
-    #         Supervisor.child_spec(default, opts)
-    #       end
-    #     end
-
-    #   Module.create(supervisor_name, supervisor_ast, Macro.Env.location(__CALLER__))
-    # end
-
-    todo "1.0.0": "remove location-keep"
-
     todo """
     On Elixir v2 the before_compile check on genserver for
     the init function presence will be removed, check why.
@@ -97,8 +60,8 @@ defmodule Mogs.Board do
 
     [
       create_attributes(opts),
-      create_supervisor(opts),
-      create_functions(opts)
+      create_supervisor(),
+      create_functions()
     ]
   end
 
@@ -134,7 +97,7 @@ defmodule Mogs.Board do
     end
   end
 
-  defp create_supervisor(opts) do
+  defp create_supervisor() do
     quote location: :keep, bind_quoted: [] do
       if @__mogs__has_supervisor? do
         supervisor_ast =
@@ -161,7 +124,7 @@ defmodule Mogs.Board do
     end
   end
 
-  defp create_functions(opts) do
+  defp create_functions() do
     quote location: :keep do
       @behaviour @__mogs__
 
