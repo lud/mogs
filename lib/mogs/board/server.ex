@@ -264,7 +264,6 @@ defmodule Mogs.Board.Server do
   #
   # Currently we only have one function
   defp do_lifecycle(state) do
-    IO.puts("LIFECYCLE")
     # Syntax with multiple lifetime functions:
     # with :unhandled <- lf_run_next_timer(state),
     #      :unhandled <- fun_2(state),
@@ -318,7 +317,6 @@ defmodule Mogs.Board.Server do
         end
 
         # our message will just be to run the lifecycle.
-        IO.puts("delay: #{inspect(delay)}")
         new_erl_tref = :erlang.start_timer(delay, self(), :run_lifecycle)
 
         {:handled, {:noreply, s(state, tref: {new_tq_ref, new_erl_tref}), @lifecycle}}

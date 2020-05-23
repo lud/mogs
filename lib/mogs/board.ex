@@ -49,45 +49,44 @@ defmodule Mogs.Board do
   defmacro __using__(opts) do
     board_mod = __CALLER__.module
 
-    using_schema = %{
-      load_mode: [inclusion: [:sync, :async], default: :sync],
-      supervisor: [type: :atom, default: Module.concat([board_mod, Supervisor])],
-      registry: [type: :atom, default: Module.concat([board_mod, Server.Registry])],
-      server_sup: [type: :atom, default: Module.concat([board_mod, Server.DynamicSupervisor])],
-      tracker: [
-        default: false,
-        required: true
-      ]
-    }
+    # using_schema = %{
+    #   load_mode: [inclusion: [:sync, :async], default: :sync],
+    #   supervisor: [type: :atom, default: Module.concat([board_mod, Supervisor])],
+    #   registry: [type: :atom, default: Module.concat([board_mod, Server.Registry])],
+    #   server_sup: [type: :atom, default: Module.concat([board_mod, Server.DynamicSupervisor])],
+    #   tracker: [
+    #     default: false,
+    #     required: true
+    #   ]
+    # }
 
-    todo "Validate options at runtime sice we have quoted values here"
-    opts = KeywordValidator.validate!(opts, using_schema)
+    # opts = KeywordValidator.validate!(opts, using_schema)
 
-    supervisor_name = Keyword.fetch!(opts, :supervisor)
+    # supervisor_name = Keyword.fetch!(opts, :supervisor)
 
     todo "Move code to a Mogs.Board.Supervisor module and here just forward the child_spec call"
 
-    if !!supervisor_name do
-      supervisor_ast =
-        quote location: :keep, bind_quoted: [board_mod: board_mod] do
-          @board_mod board_mod
+    # if !!supervisor_name do
+    #   supervisor_ast =
+    #     quote location: :keep, bind_quoted: [board_mod: board_mod] do
+    #       @board_mod board_mod
 
-          def child_spec(opts) do
-            children = @board_mod.__mogs__(:services)
+    #       def child_spec(opts) do
+    #         children = @board_mod.__mogs__(:services)
 
-            default = %{
-              id: __MODULE__,
-              start:
-                {Supervisor, :start_link, [children, [strategy: :rest_for_one, name: __MODULE__]]},
-              type: :supervisor
-            }
+    #         default = %{
+    #           id: __MODULE__,
+    #           start:
+    #             {Supervisor, :start_link, [children, [strategy: :rest_for_one, name: __MODULE__]]},
+    #           type: :supervisor
+    #         }
 
-            Supervisor.child_spec(default, opts)
-          end
-        end
+    #         Supervisor.child_spec(default, opts)
+    #       end
+    #     end
 
-      Module.create(supervisor_name, supervisor_ast, Macro.Env.location(__CALLER__))
-    end
+    #   Module.create(supervisor_name, supervisor_ast, Macro.Env.location(__CALLER__))
+    # end
 
     todo "1.0.0": "remove location-keep"
 
@@ -97,156 +96,248 @@ defmodule Mogs.Board do
     """
 
     [
-      quote location: :keep, bind_quoted: [opts: opts, __mogs__: __MODULE__] do
-        @__mogs__ __mogs__
-        @__mogs__load_mode Keyword.fetch!(opts, :load_mode)
-        @__mogs__supervisor Keyword.fetch!(opts, :supervisor)
-        @__mogs__registry Keyword.fetch!(opts, :registry)
-        @__mogs__server_sup Keyword.fetch!(opts, :server_sup)
-        @__mogs__tracker_opts Keyword.fetch!(opts, :tracker)
-        @__mogs__is_tracking? !!Keyword.fetch!(opts, :tracker)
-        @__mogs__has_supervisor? !!@__mogs__supervisor
-        @__mogs__has_registry? !!@__mogs__registry
-        @__mogs__has_server_sup? !!@__mogs__server_sup
+      create_attributes(opts),
+      create_supervisor(opts),
+      create_functions(opts)
+    ]
+  end
 
-        Module.register_attribute(__MODULE__, :__mogs__service, accumulate: true)
+  defp create_attributes(opts) do
+    quote location: :keep, bind_quoted: [opts: opts, __mogs__: __MODULE__] do
+      @__mogs__ __mogs__
+      @__mogs__load_mode Mogs.Board.check_opt(opts, :load_mode, :sync)
+      @__mogs__supervisor Mogs.Board.check_opt(opts, :supervisor, __MODULE__.Supervisor)
+      @__mogs__registry Mogs.Board.check_opt(opts, :registry, __MODULE__.Server.Registry)
+      @__mogs__server_sup Mogs.Board.check_opt(
+                            opts,
+                            :server_sup,
+                            __MODULE__.Server.DynamicSupervisor
+                          )
+      @__mogs__tracker_opts Mogs.Board.check_opt(opts, :tracker)
+      @__mogs__is_tracking? !!@__mogs__tracker_opts
+      @__mogs__has_registry? !!@__mogs__registry
+      @__mogs__has_supervisor? !!@__mogs__supervisor
+      @__mogs__has_server_sup? !!@__mogs__server_sup
 
-        if @__mogs__has_registry? do
-          @__mogs__service {Registry, keys: :unique, name: @__mogs__registry}
-        end
+      Module.register_attribute(__MODULE__, :__mogs__service, accumulate: true)
 
-        if @__mogs__has_server_sup? do
-          @__mogs__service {DynamicSupervisor, strategy: :one_for_one, name: @__mogs__server_sup}
-        end
+      if @__mogs__has_registry? do
+        @__mogs__service {Registry, keys: :unique, name: @__mogs__registry}
+      end
 
-        @__mogs__services Module.get_attribute(__MODULE__, :__mogs__service, [])
-                          |> :lists.reverse()
-      end,
-      quote location: :keep do
-        @behaviour @__mogs__
+      if @__mogs__has_server_sup? do
+        @__mogs__service {DynamicSupervisor, strategy: :one_for_one, name: @__mogs__server_sup}
+      end
 
-        @before_compile @__mogs__
+      @__mogs__services Module.get_attribute(__MODULE__, :__mogs__service, [])
+                        |> :lists.reverse()
+    end
+  end
 
-        def __mogs__(:services), do: @__mogs__services
-        def __mogs__(:load_mode), do: @__mogs__load_mode
+  defp create_supervisor(opts) do
+    quote location: :keep, bind_quoted: [] do
+      if @__mogs__has_supervisor? do
+        supervisor_ast =
+          quote location: :keep, bind_quoted: [board_mod: __MODULE__] do
+            @board_mod board_mod
 
-        if @__mogs__has_registry? do
-          def __name__(pid) when is_pid(pid), do: pid
-          def __name__(id), do: {:via, Registry, {@__mogs__registry, id}}
-        end
+            def child_spec(opts) do
+              children = @board_mod.__mogs__(:services)
 
-        if @__mogs__has_server_sup? do
-          @doc """
-          Starts a Mogs.Board handled by the callback module #{inspect(__MODULE__)}
-          """
-          def start_server(id, opts \\ []) when is_list(opts) do
-            opts = Keyword.put_new(opts, :name, __name__(id))
-            opts = Keyword.put_new(opts, :tracker, @__mogs__tracker_opts)
-            @__mogs__.start_server(__MODULE__, @__mogs__server_sup, id, opts)
-          end
-        end
+              default = %{
+                id: __MODULE__,
+                start:
+                  {Supervisor, :start_link,
+                   [children, [strategy: :rest_for_one, name: __MODULE__]]},
+                type: :supervisor
+              }
 
-        def stop_server(id, reason \\ :normal, timeout \\ :infinity) do
-          GenServer.stop(__name__(id), reason, timeout)
-        end
-
-        if @__mogs__has_registry? do
-          def whereis_server(id) do
-            Registry.whereis_name({@__mogs__registry, id})
-          end
-
-          def alive?(id) do
-            case whereis_server(id) do
-              :undefined -> false
-              pid -> true
+              Supervisor.child_spec(default, opts)
             end
           end
-        end
 
-        def read_state(id) do
-          read_state(id, fn state -> state end)
-        end
+        Module.create(@__mogs__supervisor, supervisor_ast, Macro.Env.location(__ENV__))
+      end
+    end
+  end
 
-        def read_state(id, fun) when is_function(fun, 1) do
-          @__mogs__.read_state(__name__(id), fun)
-        end
+  defp create_functions(opts) do
+    quote location: :keep do
+      @behaviour @__mogs__
 
-        def send_command(id, command) do
-          @__mogs__.send_command(__name__(id), command)
-        end
+      @before_compile @__mogs__
 
+      def __mogs__(:services), do: @__mogs__services
+      def __mogs__(:load_mode), do: @__mogs__load_mode
+
+      if @__mogs__has_registry? do
+        def __name__(pid) when is_pid(pid), do: pid
+        def __name__(id), do: {:via, Registry, {@__mogs__registry, id}}
+      end
+
+      if @__mogs__has_server_sup? do
         @doc """
-        The `player_id` and `data` arguments can be anything and will
-        be passed to your board `c:handle_add_player/3` callback.
-
-        #### If the tracker feature is enabled.
-
-        Although `player_id` and `data` can be anything, `player_id`
-        will be used to identify an unique player and should be kept
-        minimal.
-
-        If called with 3 arguments, the calling process pid will be
-        tracked. Since player are considered "lefters" after a
-        timeout, it is fine to initialize the tracking with a short
-        living process (e.g. from a Phoenix controller). On the other
-        end it is strongly unadvised to track long living processes
-        that do not "belong" to a single player.
-
-        The pid to track can be set as the 4th argument.
+        Starts a Mogs.Board handled by the callback module #{inspect(__MODULE__)}
         """
-        if @__mogs__is_tracking? do
-          def add_player(id, player_id, data, track \\ self())
-        else
-          def add_player(id, player_id, data, track \\ nil)
+        def start_server(id, opts \\ []) when is_list(opts) do
+          opts =
+            if @__mogs__has_registry? do
+              Keyword.put_new(opts, :name, __name__(id))
+            else
+              opts
+            end
+
+          opts = Keyword.put_new(opts, :tracker, @__mogs__tracker_opts)
+          @__mogs__.start_server(__MODULE__, @__mogs__server_sup, id, opts)
+        end
+      end
+
+      def stop_server(id, reason \\ :normal, timeout \\ :infinity) do
+        GenServer.stop(__name__(id), reason, timeout)
+      end
+
+      if @__mogs__has_registry? do
+        def whereis_server(id) do
+          Registry.whereis_name({@__mogs__registry, id})
         end
 
-        def add_player(id, player_id, data, pid) do
-          @__mogs__.add_player(__name__(id), player_id, data, pid)
-        end
-
-        if @__mogs__is_tracking? do
-          def remove_player(id, player_id, reason, clear_tracking? \\ true)
-        else
-          def remove_player(id, player_id, reason, clear_tracking? \\ false)
-        end
-
-        def remove_player(id, player_id, reason, clear_tracking?) do
-          @__mogs__.remove_player(__name__(id), player_id, reason, clear_tracking?)
-        end
-
-        if @__mogs__is_tracking? do
-          @doc """
-          Add a pid to the players tracking system. Unlinke add_player, it will
-          no call your `c:handle_add_player/3` callback, nor any other callback.
-          """
-          def track_player(id, player_id, pid \\ self())
-
-          def track_player(id, player_id, pid) when is_pid(pid) do
-            @__mogs__.track_player(__name__(id), player_id, pid)
+        def alive?(id) do
+          case whereis_server(id) do
+            :undefined -> false
+            pid -> true
           end
         end
-
-        @doc false
-        def handle_command(command, board) do
-          @__mogs__.__handle_command__(command, board)
-        end
-
-        @doc false
-        def handle_timer(timer, board) do
-          @__mogs__.__handle_timer__(timer, board)
-        end
-
-        @doc false
-        def handle_error(_error, board) do
-          {:ok, board}
-        end
-
-        defoverridable read_state: 2,
-                       send_command: 2,
-                       handle_command: 2,
-                       handle_error: 2
       end
-    ]
+
+      def read_state(id) do
+        read_state(id, fn state -> state end)
+      end
+
+      def read_state(id, fun) when is_function(fun, 1) do
+        @__mogs__.read_state(__name__(id), fun)
+      end
+
+      def send_command(id, command) do
+        @__mogs__.send_command(__name__(id), command)
+      end
+
+      @doc """
+      The `player_id` and `data` arguments can be anything and will
+      be passed to your board `c:handle_add_player/3` callback.
+
+      #### If the tracker feature is enabled.
+
+      Although `player_id` and `data` can be anything, `player_id`
+      will be used to identify an unique player and should be kept
+      minimal.
+
+      If called with 3 arguments, the calling process pid will be
+      tracked. Since player are considered "lefters" after a
+      timeout, it is fine to initialize the tracking with a short
+      living process (e.g. from a Phoenix controller). On the other
+      end it is strongly unadvised to track long living processes
+      that do not "belong" to a single player.
+
+      The pid to track can be set as the 4th argument.
+      """
+      if @__mogs__is_tracking? do
+        def add_player(id, player_id, data, track \\ self())
+      else
+        def add_player(id, player_id, data, track \\ nil)
+      end
+
+      def add_player(id, player_id, data, pid) do
+        @__mogs__.add_player(__name__(id), player_id, data, pid)
+      end
+
+      if @__mogs__is_tracking? do
+        def remove_player(id, player_id, reason, clear_tracking? \\ true)
+      else
+        def remove_player(id, player_id, reason, clear_tracking? \\ false)
+      end
+
+      def remove_player(id, player_id, reason, clear_tracking?) do
+        @__mogs__.remove_player(__name__(id), player_id, reason, clear_tracking?)
+      end
+
+      if @__mogs__is_tracking? do
+        @doc """
+        Add a pid to the players tracking system. Unlinke add_player, it will
+        no call your `c:handle_add_player/3` callback, nor any other callback.
+        """
+        def track_player(id, player_id, pid \\ self())
+
+        def track_player(id, player_id, pid) when is_pid(pid) do
+          @__mogs__.track_player(__name__(id), player_id, pid)
+        end
+      end
+
+      @doc false
+      def handle_command(command, board) do
+        @__mogs__.__handle_command__(command, board)
+      end
+
+      @doc false
+      def handle_timer(timer, board) do
+        @__mogs__.__handle_timer__(timer, board)
+      end
+
+      @doc false
+      def handle_error(_error, board) do
+        {:ok, board}
+      end
+
+      defoverridable read_state: 2,
+                     send_command: 2,
+                     handle_command: 2,
+                     handle_error: 2
+    end
+  end
+
+  @doc """
+  Validates a Mogs.Board option. raise if the option is not valid or
+  is unknown. Returns the option value or a default value if the 
+  option supports it.
+
+  This function is intended to be called at compile time.
+  """
+
+  def check_opt(opts, key, default \\ nil)
+
+  def check_opt(opts, key, default) do
+    v_opt(key, Keyword.get(opts, key, default))
+  end
+
+  @known_opts ~w(tracker load_mode supervisor)a
+  @todo "v_opt is a bad name"
+
+  defp v_opt(:load_mode, mode) when mode in [:sync, :async] do
+    mode
+  end
+
+  defp v_opt(key, module)
+       when (is_atom(module) or is_nil(module)) and key in [:supervisor, :registry, :server_sup] do
+    module
+  end
+
+  defp v_opt(:tracker, nil) do
+    nil
+  end
+
+  defp v_opt(:tracker, opts) when is_list(opts) do
+    Mogs.Players.Tracker.validate_opts!(opts)
+  end
+
+  defp v_opt(key, nil) when key in @known_opts do
+    raise ArgumentError, "The option #{inspect(key)} is required"
+  end
+
+  defp v_opt(key, value) when key in @known_opts do
+    raise ArgumentError, "Incorrect value for option #{inspect(key)}: #{inspect(value)}"
+  end
+
+  defp v_opt(key, _) do
+    raise ArgumentError, "The option #{inspect(key)} is unknown"
   end
 
   defmacro __before_compile__(env) do
@@ -338,6 +429,7 @@ defmodule Mogs.Board do
     ]
   end
 
+  @todo "Move options validations into start_link in server"
   def start_server(module, supervisor, id, opts) do
     opts_schema = %{
       mod: [default: module],
@@ -415,10 +507,4 @@ defmodule Mogs.Board do
   def track_player(name_or_pid, player_id, pid) when is_pid(pid) do
     GenServer.call(name_or_pid, {:track_player, player_id, pid})
   end
-end
-
-defmodule Board do
-  use TODO
-  @todo "0.0.0": "Remove this module"
-  use Mogs.Board, tracker: []
 end

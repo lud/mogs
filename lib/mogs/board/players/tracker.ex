@@ -6,24 +6,6 @@ defmodule Mogs.Players.Tracker do
   @default_player_timeout 30_000
 
   @opts_schema %{timeout: [type: :integer, required: true, default: @default_player_timeout]}
-  def validate_opts(opts) when is_list(opts) do
-    KeywordValidator.validate(opts, @opts_schema)
-  end
-
-  def validate_parent_opts(:tracker, false) do
-    []
-  end
-
-  def validate_parent_opts(:tracker, opts) when is_list(opts) do
-    case validate_opts(opts) do
-      {:ok, _} -> []
-      {:error, invalid} -> Keyword.values(invalid)
-    end
-  end
-
-  def validate_parent_opts(:tracker, opts) do
-    ["Keyword required, got: #{inspect(opts)}"]
-  end
 
   # - p2ms: a map from 1 player_in to N monitor_refs
   # - m2p: a map from 1 monitor_ref to 1 player_id
@@ -50,8 +32,12 @@ defmodule Mogs.Players.Tracker do
     timeout: [type: :integer, default: @default_player_timeout]
   }
 
+  def validate_opts!(opts) do
+    KeywordValidator.validate!(opts, @opts_schema)
+  end
+
   def new(opts) do
-    opts = KeywordValidator.validate!(opts, @opts_schema)
+    opts = validate_opts!(opts)
     s(ptimeout: Keyword.fetch!(opts, :timeout))
   end
 
