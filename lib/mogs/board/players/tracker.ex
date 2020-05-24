@@ -40,7 +40,6 @@ defmodule Mogs.Players.Tracker do
   end
 
   def track(s(p2ms: p2ms, m2p: m2p) = state, player_id, pid) when is_pid(pid) do
-    Logger.debug("Monitoring process #{inspect(pid)} for player #{inspect(player_id)}")
     ref = Process.monitor(pid)
     p2ms = Map.update(p2ms, player_id, [ref], fn refs -> [ref | refs] end)
     m2p = Map.put(m2p, ref, player_id)
@@ -109,7 +108,6 @@ defmodule Mogs.Players.Tracker do
       if has_refs? do
         state
       else
-        Logger.debug("Start erlang timer for #{delay}ms")
         tref = :erlang.start_timer(delay, self(), {__MODULE__, player_id})
         s(state, p2tref: Map.put(p2tref, player_id, tref))
       end

@@ -297,7 +297,6 @@ defmodule Mogs.Board.Server do
     case Mogs.Timers.pop_timer(board) do
       {:ok, entry, board} ->
         timer = TimeQueue.value(entry)
-        IO.inspect(timer, label: "TRY TIMER")
         result = mod.handle_timer(timer, board)
         gen_tuple = handle_result(result, s(state, board: board))
 

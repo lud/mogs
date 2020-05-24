@@ -1,6 +1,5 @@
 defmodule Mogs.Players.TrackerTest do
   use ExUnit.Case, async: true
-  alias Mogs.Players.Tracker
 
   @test_timeout 100
 
@@ -8,6 +7,8 @@ defmodule Mogs.Players.TrackerTest do
     defstruct players: %{}, test_process_pid: nil
     require Logger
     use Mogs.Board, tracker: [timeout: 100]
+    require TestHelpers.NoWarnings
+    TestHelpers.NoWarnings.handle_update()
 
     def load(_, {:parent, pid} = _load_info) when is_pid(pid) do
       {:ok, struct(__MODULE__, test_process_pid: pid)}
@@ -15,12 +16,8 @@ defmodule Mogs.Players.TrackerTest do
 
     def handle_add_player(board, player_id, data) do
       case Map.get(board.players, player_id) do
-        nil ->
-          IO.puts("Adding player #{inspect(player_id)}")
-          {:ok, put_in(board.players[player_id], data)}
-
-        _ ->
-          {:error, :already_in}
+        nil -> {:ok, put_in(board.players[player_id], data)}
+        _ -> {:error, :already_in}
       end
     end
 
@@ -29,20 +26,13 @@ defmodule Mogs.Players.TrackerTest do
       send(pid, {:player_removed, player_id, reason})
       players = Map.delete(board.players, player_id)
 
-      Logger.warn("Removing player #{player_id}")
-
       case map_size(players) do
-        0 ->
-          Logger.warn("No more players in #{__MODULE__}, stopping")
-          {:stop, :normal}
-
-        _ ->
-          {:ok, %{board | players: players}}
+        0 -> {:stop, :normal}
+        _ -> {:ok, %{board | players: players}}
       end
     end
 
     def handle_command(:list_players, board) do
-      IO.inspect(board, label: "BOARD")
       list = Map.keys(board.players) |> Enum.sort()
       Mogs.Board.Command.Result.merge([], board: board, reply: list)
     end
@@ -55,7 +45,6 @@ defmodule Mogs.Players.TrackerTest do
 
   test "a tracker can be started and monitor players with a timeout" do
     id = __ENV__.line
-    player_id = 1
 
     assert {:ok, pid} = TrackBoard.start_server(id, load_info: {:parent, self()})
 
@@ -69,7 +58,7 @@ defmodule Mogs.Players.TrackerTest do
 
     this = self()
 
-    player_1 = spawn_tracked_player(id, :p1)
+    _player_1 = spawn_tracked_player(id, :p1)
 
     assert [:p1] = TrackBoard.send_command(id, :list_players)
 

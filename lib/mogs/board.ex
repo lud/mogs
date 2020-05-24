@@ -136,6 +136,17 @@ defmodule Mogs.Board do
       if @__mogs__has_registry? do
         def __name__(pid) when is_pid(pid), do: pid
         def __name__(id), do: {:via, Registry, {@__mogs__registry, id}}
+
+        defp whereis_server(id) do
+          Registry.whereis_name({@__mogs__registry, id})
+        end
+
+        def alive?(id) do
+          case whereis_server(id) do
+            :undefined -> false
+            pid -> true
+          end
+        end
       end
 
       if @__mogs__has_server_sup? do
@@ -153,22 +164,9 @@ defmodule Mogs.Board do
           opts = Keyword.put_new(opts, :tracker, @__mogs__tracker_opts)
           @__mogs__.start_server(__MODULE__, @__mogs__server_sup, id, opts)
         end
-      end
 
-      def stop_server(id, reason \\ :normal, timeout \\ :infinity) do
-        GenServer.stop(__name__(id), reason, timeout)
-      end
-
-      if @__mogs__has_registry? do
-        def whereis_server(id) do
-          Registry.whereis_name({@__mogs__registry, id})
-        end
-
-        def alive?(id) do
-          case whereis_server(id) do
-            :undefined -> false
-            pid -> true
-          end
+        def stop_server(id, reason \\ :normal, timeout \\ :infinity) do
+          GenServer.stop(__name__(id), reason, timeout)
         end
       end
 
@@ -205,25 +203,8 @@ defmodule Mogs.Board do
       """
       if @__mogs__is_tracking? do
         def add_player(id, player_id, data, track \\ self())
-      else
-        def add_player(id, player_id, data, track \\ nil)
-      end
-
-      def add_player(id, player_id, data, pid) do
-        @__mogs__.add_player(__name__(id), player_id, data, pid)
-      end
-
-      if @__mogs__is_tracking? do
         def remove_player(id, player_id, reason, clear_tracking? \\ true)
-      else
-        def remove_player(id, player_id, reason, clear_tracking? \\ false)
-      end
 
-      def remove_player(id, player_id, reason, clear_tracking?) do
-        @__mogs__.remove_player(__name__(id), player_id, reason, clear_tracking?)
-      end
-
-      if @__mogs__is_tracking? do
         @doc """
         Add a pid to the players tracking system. Unlinke add_player, it will
         no call your `c:handle_add_player/3` callback, nor any other callback.
@@ -233,6 +214,17 @@ defmodule Mogs.Board do
         def track_player(id, player_id, pid) when is_pid(pid) do
           @__mogs__.track_player(__name__(id), player_id, pid)
         end
+      else
+        def add_player(id, player_id, data, track \\ nil)
+        def remove_player(id, player_id, reason, clear_tracking? \\ false)
+      end
+
+      def add_player(id, player_id, data, pid) do
+        @__mogs__.add_player(__name__(id), player_id, data, pid)
+      end
+
+      def remove_player(id, player_id, reason, clear_tracking?) do
+        @__mogs__.remove_player(__name__(id), player_id, reason, clear_tracking?)
       end
 
       @doc false
@@ -264,7 +256,6 @@ defmodule Mogs.Board do
 
   This function is intended to be called at compile time.
   """
-
   def check_opt(opts, key, default \\ nil)
 
   def check_opt(opts, key, default) do

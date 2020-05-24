@@ -175,7 +175,6 @@ defmodule Mogs.BoardTest do
     end
 
     def handle_timer({pid, name}, board) do
-      IO.puts("send #{inspect({:handled!, name})}")
       send(pid, {:handled!, name})
       return(board: board)
     end
@@ -187,9 +186,6 @@ defmodule Mogs.BoardTest do
     assert pid === GenServer.whereis(TimedBoard.__name__(id))
 
     TimedBoard.send_command(id, %SetTimer{test_pid: self()})
-
-    # Process.sleep(2000)
-    :erlang.process_info(self(), :messages) |> IO.inspect()
 
     # raise "fuck"
     assert_next_receive({:handled!, :timer_1}, 400)

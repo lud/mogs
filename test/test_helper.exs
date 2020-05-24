@@ -11,7 +11,7 @@ defmodule TestHelpers.NoWarnings do
     end
   end
 
-  defmacro handle_update do
+  defmacro handle_update() do
     quote do
       def handle_update(board) do
         {:ok, board}
@@ -32,7 +32,7 @@ defmodule TestHelpers.NoWarnings do
     end
   end
 
-  defmacro handle_add_player do
+  defmacro handle_add_player() do
     quote do
       def handle_add_player(_, _, _) do
         raise "Unimplemented"

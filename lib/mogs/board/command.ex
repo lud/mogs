@@ -61,8 +61,6 @@ defmodule Mogs.Board.Command do
   end
 
   def run_timer(mod, data, board) do
-    IO.inspect({mod, data}, label: "HANDLE TIMER")
-
     mod.handle_timer(data, board)
     |> cast_result({mod, :handle_timer, [data, board]}, board)
   end
