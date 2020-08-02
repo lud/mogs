@@ -38,7 +38,7 @@ defmodule Mogs.MixProject do
   defp deps do
     [
       # Deps
-      {:time_queue, ">= 0.5.0"},
+      {:time_queue, ">= 0.6.0"},
       {:nimble_options, "~> 0.3.0"},
 
       # Test Deps
