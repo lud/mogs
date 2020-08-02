@@ -1,11 +1,13 @@
 defmodule Mogs.Players.Tracker do
   use TODO
-  require Record
+  import Record
   require Logger
 
   @default_player_timeout 30_000
 
-  @opts_schema %{timeout: [type: :integer, required: true, default: @default_player_timeout]}
+  @opts_schema [
+    timeout: [type: :pos_integer, required: true, default: @default_player_timeout]
+  ]
 
   # - p2ms: a map from 1 player_in to N monitor_refs
   # - m2p: a map from 1 monitor_ref to 1 player_id
@@ -20,22 +22,19 @@ defmodule Mogs.Players.Tracker do
   #   this process exits (starting a new timer). The player should be
   #   considered alive for 30 more seconds, so we need a way to
   #   discard the first timer as it is not relevant anymore.
-  @todo "remove client in schema"
-  @todo "change record name or use a man do differ from server s()"
-  Record.defrecordp(:s, client: nil, p2ms: %{}, m2p: %{}, p2tref: %{}, ptimeout: nil)
+  defrecordp(:s, :trk, p2ms: %{}, m2p: %{}, p2tref: %{}, ptimeout: nil)
   @type monitor :: reference()
   @type player_id :: term()
 
-  @opts_schema %{
-    timeout: [type: :integer, default: @default_player_timeout]
-  }
+  def opts_schema() do
+    @opts_schema
+  end
 
-  def validate_opts!(opts) do
-    KeywordValidator.validate!(opts, @opts_schema)
+  def validate_opts(opts) do
+    NimbleOptions.validate(opts, @opts_schema)
   end
 
   def new(opts) do
-    opts = validate_opts!(opts)
     s(ptimeout: Keyword.fetch!(opts, :timeout))
   end
 

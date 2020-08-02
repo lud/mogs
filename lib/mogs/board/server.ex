@@ -1,8 +1,7 @@
 defmodule Mogs.Board.Server.Config do
   @moduledoc false
   # Board options
-  require Record
-  Record.defrecord(:rcfg, timers: false, tracker: nil)
+  defstruct load_mode: :sync, timers: false, tracker: nil
 end
 
 defmodule Mogs.Board.Server do
@@ -11,81 +10,68 @@ defmodule Mogs.Board.Server do
   require Logger
   require Record
   alias Mogs.Board.Command.Result
+  alias Mogs.Board.Server.Config
   alias Mogs.Players.Tracker
-  import Mogs.Board.Server.Config, only: [rcfg: 0, rcfg: 1, rcfg: 2], warn: false
+
+  # start_link should be called from Mogs.Board module
+  @doc false
+  def start_link(opts) do
+    {opts, cfg_opts} = Keyword.split(opts, [:module, :id, :name, :load_info])
+
+    mod = Keyword.fetch!(opts, :module)
+    id = Keyword.fetch!(opts, :id)
+    name = Keyword.fetch!(opts, :name)
+    load_info = Keyword.fetch!(opts, :load_info)
+
+    cfg = struct(Config, cfg_opts)
+
+    GenServer.start_link(__MODULE__, {mod, id, cfg, load_info}, name: name)
+  end
+
   # GenServer state
   #
   # tref is a 2-tuple holding two time references : a TimeQueue tref and an
   # :erlang tref.
-  Record.defrecordp(:s, id: nil, mod: nil, board: nil, tref: {nil, nil}, cfg: rcfg(), tracker: nil)
+  defmodule S do
+    defstruct id: nil, mod: nil, board: nil, tref: {nil, nil}, cfg: %Config{}, tracker: nil
+  end
 
   # @todo allow to define the timeout from the `use Mogs.Board` call
   @timeout 60_000
   @lifecycle {:continue, :lifecycle}
 
-  @todo "Proper options validation must be done here, it is the last moment to set defaults"
-
-  def start_link(opts) when is_list(opts) do
-    {opts, cfg_opts} = Keyword.split(opts, [:mod, :id, :name, :load_info])
-    mod = Keyword.fetch!(opts, :mod)
-    id = Keyword.fetch!(opts, :id)
-    name = Keyword.fetch!(opts, :name)
-    load_info = Keyword.get(opts, :load_info, nil)
-    cfg = load_board_config(cfg_opts, rcfg())
-
-    tracker =
-      case rcfg(cfg, :tracker) do
-        nil -> nil
-        tracker_opts when is_list(tracker_opts) -> Tracker.new(tracker_opts)
-      end
-
-    GenServer.start_link(__MODULE__, {mod, id, load_info, cfg, tracker}, name: name)
-  end
-
-  defp load_board_config([], cfg) do
-    cfg
-  end
-
-  defp load_board_config([{k, v} | opts], cfg) do
-    load_board_config(opts, load_board_config_elem(k, v, cfg))
-  end
-
-  defp load_board_config_elem(:timers, v, cfg) when is_boolean(v) do
-    rcfg(cfg, timers: v)
-  end
-
-  defp load_board_config_elem(:tracker, v, cfg) when is_list(v) do
-    rcfg(cfg, tracker: v)
-  end
-
-  defp load_board_config_elem(:tracker, nil, cfg) do
-    rcfg(cfg, tracker: nil)
-  end
-
-  defp load_board_config_elem(k, v, cfg) do
-    Logger.warn("Ignored Invalid #{__MODULE__} config options: #{inspect(k)}=#{inspect(v)}")
-    cfg
-  end
-
   @impl true
-  def init({mod, id, load_info, cfg, tracker}) do
-    with :sync <- load_mode(mod),
-         {:ok, board} <- load_board(mod, id, load_info) do
-      {:ok, s(id: id, mod: mod, board: board, cfg: cfg, tracker: tracker), @lifecycle}
-    else
-      :async ->
-        {:ok, s(id: id, mod: mod, board: load_info, cfg: cfg, tracker: tracker),
-         {:continue, :async_load}}
-
-      {:error, reason} ->
-        {:stop, reason}
+  def init({mod, id, cfg, load_info}) do
+    with {:ok, board} <- maybe_load_board(cfg, mod, id, load_info),
+         {:ok, tracker} <- maybe_create_tracker(cfg),
+         continuation = init_continuation(cfg, load_info) do
+      state = struct(S, id: id, mod: mod, board: board, cfg: cfg, tracker: tracker)
+      {:ok, state, continuation}
     end
   end
 
+  defp maybe_load_board(%Config{load_mode: :async}, _, _, _),
+    do: {:ok, nil}
+
+  defp maybe_load_board(_, mod, id, load_info),
+    do: load_board(mod, id, load_info)
+
+  defp maybe_create_tracker(%Config{tracker: nil}),
+    do: {:ok, nil}
+
+  defp maybe_create_tracker(%Config{tracker: opts}),
+    do: {:ok, Tracker.new(opts)}
+
+  defp init_continuation(%Config{load_mode: :async}, load_info),
+    do: {:continue, {:async_load, load_info}}
+
+  defp init_continuation(_, _),
+    do: @lifecycle
+
   @impl true
-  def handle_continue(:async_load, s(id: id, mod: mod, board: load_info) = state) do
+  def handle_continue({:async_load, load_info}, %S{id: id, mod: mod, board: nil} = state) do
     case load_board(mod, id, load_info) do
-      {:ok, board} -> {:noreply, s(state, board: board), @lifecycle}
+      {:ok, board} -> {:noreply, struct(state, board: board), @lifecycle}
       {:error, reason} -> {:stop, reason}
     end
   end
@@ -95,75 +81,62 @@ defmodule Mogs.Board.Server do
   end
 
   @impl true
-  def handle_call({:read_board_state, fun}, _from, s(board: board) = state) do
+  def handle_call({:read_board_state, fun}, _from, %S{board: board} = state) do
     {:reply, fun.(board), state, @timeout}
   end
 
   @impl true
-  def handle_call({:run_command, command}, from, s(board: board, mod: mod) = state) do
+  def handle_call({:run_command, command}, from, %S{board: board, mod: mod} = state) do
     result = mod.handle_command(command, board)
     reply_result(result, from)
     handle_result(result, state)
   end
 
   @impl true
-  def handle_call({:add_player, player_id, data, pid}, from, s(board: board, mod: mod) = state) do
+  def handle_call({:add_player, player_id, data}, from, %S{board: board, mod: mod} = state) do
     result =
       board
       |> mod.handle_add_player(player_id, data)
       |> Result.with_defaults(board: board, reply: :ok)
 
-    state =
-      if result.ok? do
-        case pid do
-          nil ->
-            state
-
-          pid when is_pid(pid) ->
-            tracker =
-              s(state, :tracker)
-              |> Tracker.track(player_id, pid)
-
-            s(state, tracker: tracker)
-        end
-      else
-        state
-      end
-
     reply_result(result, from)
     handle_result(result, state)
   end
 
   @impl true
-  def handle_call({:remove_player, player_id, reason, clear?}, from, state) do
-    s(tracker: tracker) = state
-
-    state =
-      case clear? do
-        true ->
-          tracker = Tracker.forget(tracker, player_id)
-          s(state, tracker: tracker)
-
-        false ->
-          state
+  def handle_call({:remove_player, player_id, reason}, from, state) do
+    # With the current implementation, remove player can only return :ok or
+    # :stop tuples, there is no error handling, so we can always call Tracker.forget.
+    tracker =
+      case state.tracker do
+        nil -> nil
+        tracker -> Tracker.forget(tracker, player_id)
       end
+
+    state = %S{state | tracker: tracker}
 
     result = player_removal(player_id, reason, state)
+
     reply_result(result, from)
     handle_result(result, state)
   end
 
   @impl true
-  def handle_call({:track_player, player_id, pid}, _from, s(tracker: tracker) = state) do
+  def handle_call({:track_player, _, _}, _from, %S{tracker: nil} = state) do
+    {:reply, {:error, :no_tracker}, state, @timeout}
+  end
+
+  @impl true
+  def handle_call({:track_player, player_id, pid}, _from, %S{tracker: tracker} = state) do
     tracker = Tracker.track(tracker, player_id, pid)
-    {:reply, :ok, s(state, tracker: tracker), @timeout}
+    {:reply, :ok, %S{state | tracker: tracker}, @timeout}
   end
 
   @impl true
   # Receiving a timeout for wich we have a reference in the state.
-  def handle_info({:timeout, erl_tref, msg}, s(tref: {_, erl_tref}) = state) do
+  def handle_info({:timeout, erl_tref, msg}, %S{tref: {_, erl_tref}} = state) do
     # cleanup as the ref can no longer been expected to tick
-    state = s(state, tref: {nil, nil})
+    state = %S{state | tref: {nil, nil}}
 
     case msg do
       :run_lifecycle -> do_lifecycle(state)
@@ -171,13 +144,13 @@ defmodule Mogs.Board.Server do
   end
 
   @impl true
-  def handle_info({:timeout, _, {Tracker, _}} = msg, s(tracker: tracker) = state) do
+  def handle_info({:timeout, _, {Tracker, _}} = msg, %S{tracker: tracker} = state) do
     case Tracker.handle_timeout(tracker, msg) do
       :stale ->
         {:noreply, state, @timeout}
 
       {:player_timeout, player_id, tracker} ->
-        state = s(state, tracker: tracker)
+        state = %S{state | tracker: tracker}
         result = player_removal(player_id, :timeout, state)
         handle_result(result, state)
     end
@@ -196,10 +169,10 @@ defmodule Mogs.Board.Server do
     {:noreply, state, @timeout}
   end
 
-  def handle_info({:DOWN, _, :process, _, _} = msg, s(tracker: tracker) = state) do
+  def handle_info({:DOWN, _, :process, _, _} = msg, %S{tracker: tracker} = state) do
     case Tracker.handle_down(tracker, msg) do
       {:ok, tracker} ->
-        {:noreply, s(state, tracker: tracker), @timeout}
+        {:noreply, %S{state | tracker: tracker}, @timeout}
 
       :unknown ->
         Logger.warn("Received monitor down message: #{inspect(msg)}")
@@ -211,7 +184,7 @@ defmodule Mogs.Board.Server do
     GenServer.reply(from, result.reply)
   end
 
-  defp handle_result(%Result{} = result, s(mod: mod) = state) do
+  defp handle_result(%Result{} = result, %S{mod: mod} = state) do
     # Result has mutiple infos
     # - reply : handled outside of this function, in handle_call
     # - error (ok? :: boolean, reason :: any): We decide if we call
@@ -220,10 +193,9 @@ defmodule Mogs.Board.Server do
     # - stop: false | {true, reason :: any}
 
     transformed =
-      case result.ok? do
-        true -> mod.handle_update(result.board)
-        false -> mod.handle_error(result.reason, result.board)
-      end
+      if result.ok?,
+        do: mod.handle_update(result.board),
+        else: mod.handle_error(result.reason, result.board)
 
     result =
       case transformed do
@@ -231,7 +203,7 @@ defmodule Mogs.Board.Server do
         {:stop, reason} -> %Result{result | stop: {true, reason}}
       end
 
-    state = s(state, board: result.board)
+    state = %S{state | board: result.board}
 
     case result.stop do
       {true, reason} -> {:stop, reason, state}
@@ -242,10 +214,6 @@ defmodule Mogs.Board.Server do
   defp handle_result(not_a_result, state) do
     Logger.error("Command returned invalid result: #{inspect(not_a_result)}")
     {:stop, {:bad_command_return, not_a_result}, state}
-  end
-
-  defp load_mode(mod) do
-    mod.__mogs__(:load_mode)
   end
 
   defp load_board(mod, id, load_info) do
@@ -287,18 +255,18 @@ defmodule Mogs.Board.Server do
 
   # Lifecycle functions prefixed with "lf_"
 
-  defp lf_run_next_timer(s(cfg: rcfg(timers: false))) do
+  defp lf_run_next_timer(%S{cfg: %Config{timers: false}}) do
     :unhandled
   end
 
-  defp lf_run_next_timer(s(cfg: rcfg(timers: true)) = state) do
-    s(tref: {tq_tref, erl_tref}, board: board, mod: mod) = state
+  defp lf_run_next_timer(%S{cfg: %Config{timers: true}} = state) do
+    %S{tref: {tq_tref, erl_tref}, board: board, mod: mod} = state
 
     case Mogs.Timers.pop_timer(board) do
       {:ok, entry, board} ->
         timer = TimeQueue.value(entry)
         result = mod.handle_timer(timer, board)
-        gen_tuple = handle_result(result, s(state, board: board))
+        gen_tuple = handle_result(result, %S{state | board: board})
 
         {:handled, gen_tuple}
 
@@ -321,7 +289,7 @@ defmodule Mogs.Board.Server do
         # our message will just be to run the lifecycle.
         new_erl_tref = :erlang.start_timer(delay, self(), :run_lifecycle)
 
-        {:handled, {:noreply, s(state, tref: {new_tq_ref, new_erl_tref}), @lifecycle}}
+        {:handled, {:noreply, %S{state | tref: {new_tq_ref, new_erl_tref}}, @lifecycle}}
 
       # now we have a new state, so we must tell the lifecycle handler that
       # we handled something. we will just loop on the lifecycle
@@ -331,7 +299,7 @@ defmodule Mogs.Board.Server do
     end
   end
 
-  defp player_removal(player_id, reason, s(mod: mod, board: board)) do
+  defp player_removal(player_id, reason, %S{mod: mod, board: board}) do
     board
     |> mod.handle_remove_player(player_id, reason)
     |> Result.with_defaults(board: board, reply: :ok)

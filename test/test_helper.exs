@@ -1,44 +1,25 @@
-defmodule TestHelpers.NoWarnings do
-  defmacro __name__() do
+ExUnit.start()
+
+defmodule Mogs.TestHelper do
+  # Unlike assert_receive that awaits a message matching a pattern,
+  # assert_next_receive will match a pattern against the message
+  # received first. Used to check order of messages
+  defmacro assert_next_receive(pattern, timeout \\ 1000) do
     quote do
-      def __name__(pid) when is_pid(pid) do
-        pid
-      end
+      receive do
+        unquote(pattern) ->
+          assert true
 
-      def __name__(board_id) do
-        nil
-      end
-    end
-  end
-
-  defmacro handle_update() do
-    quote do
-      def handle_update(board) do
-        {:ok, board}
-      end
-    end
-  end
-
-  defmacro fake_fun(name, arity) do
-    args = List.duplicate(quote(do: _), arity)
-    mod = __CALLER__.module
-
-    quote do
-      def unquote(name)(unquote_splicing(args)) do
-        raise "Undefined test module fun #{unquote(name)}/#{unquote(arity)} in #{
-                inspect(unquote(mod))
-              }"
-      end
-    end
-  end
-
-  defmacro handle_add_player() do
-    quote do
-      def handle_add_player(_, _, _) do
-        raise "Unimplemented"
+        other ->
+          flunk(
+            "Expected to receive a message matching #{Macro.to_string(unquote(pattern))}, received: #{
+              inspect(other)
+            }"
+          )
+      after
+        unquote(timeout) ->
+          raise "timeout"
       end
     end
   end
 end
-
-ExUnit.start()

@@ -1,14 +1,12 @@
 defmodule Mogs.Players.TrackerTest do
   use ExUnit.Case, async: true
-
+  import Mogs.TestHelper
   @test_timeout 100
 
   defmodule TrackBoard do
+    use Mogs.Board
     defstruct players: %{}, test_process_pid: nil
     require Logger
-    use Mogs.Board, tracker: [timeout: 100]
-    require TestHelpers.NoWarnings
-    TestHelpers.NoWarnings.handle_update()
 
     def load(_, {:parent, pid} = _load_info) when is_pid(pid) do
       {:ok, struct(__MODULE__, test_process_pid: pid)}
@@ -36,19 +34,28 @@ defmodule Mogs.Players.TrackerTest do
       list = Map.keys(board.players) |> Enum.sort()
       Mogs.Board.Command.Result.merge([], board: board, reply: list)
     end
+
+    def handle_update(board) do
+      {:ok, board}
+    end
+
+    def handle_error(error, board) do
+      IO.puts([IO.ANSI.red(), inspect(error), IO.ANSI.default_color()])
+      {:ok, board}
+    end
   end
 
-  setup_all do
-    start_supervised(TrackBoard.Supervisor)
-    :ok
+  test "adding and removing players without tracker" do
+    IO.warn("todo implement players add/remove functionality without using a tracker")
   end
 
   test "a tracker can be started and monitor players with a timeout" do
     id = __ENV__.line
 
-    assert {:ok, pid} = TrackBoard.start_server(id, load_info: {:parent, self()})
+    assert {:ok, pid} =
+             Mogs.Board.boot(TrackBoard, id, load_info: {:parent, self()}, tracker: [timeout: 100])
 
-    assert pid === GenServer.whereis(TrackBoard.__name__(id))
+    assert pid === GenServer.whereis(TrackBoard.server_name(id))
 
     # Then we will start/kill the player multiple times. As long
     # as a player is re-tracked within the timeout limit, we will
@@ -60,15 +67,16 @@ defmodule Mogs.Players.TrackerTest do
 
     _player_1 = spawn_tracked_player(id, :p1)
 
-    assert [:p1] = TrackBoard.send_command(id, :list_players)
+    assert [:p1] = Mogs.Board.send_command(TrackBoard, id, :list_players)
 
+    # This loop will add the player 2, track it, and kill it multiple times
     spawn(fn ->
       for i <- 1..10 do
         player_2 = spawn_tracked_player(id, :p2)
 
         if i == 1 do
           # the list is sorted by the board
-          assert [:p1, :p2] = TrackBoard.send_command(id, :list_players)
+          assert [:p1, :p2] = Mogs.Board.send_command(TrackBoard, id, :list_players)
         end
 
         Process.sleep(wait_time)
@@ -84,31 +92,37 @@ defmodule Mogs.Players.TrackerTest do
     # And then wait at least @test_timeout to get the player timeout.
 
     assert_receive(:finished_iteration, wait_time * iterations + 50)
-
-    # now we should receive the left message but not before the actual player
-    # timeout time
     refute_received({:player_removed, :p2, :timeout}, "Received timeout too early")
-    assert_receive({:player_removed, :p2, :timeout}, @test_timeout + 50)
+
+    # now we should receive the left message
+    t1 = System.monotonic_time(:millisecond)
+    assert_next_receive({:player_removed, :p2, :timeout})
+    t2 = System.monotonic_time(:millisecond)
+    assert_in_delta t1, t2, 150, "Player timeout was too early: #{t2 - t1}"
 
     # Player 2 should not be in the board anymore
-    assert [:p1] = TrackBoard.send_command(id, :list_players)
+    assert [:p1] = Mogs.Board.send_command(TrackBoard, id, :list_players)
 
     # Manual remove of player 1
-    TrackBoard.remove_player(id, :p1, _reason = :left)
+    Mogs.Board.remove_player(TrackBoard, id, :p1, _reason = :left)
     assert_receive({:player_removed, :p1, :left})
-    refute TrackBoard.alive?(id)
+    refute Mogs.Board.alive?(TrackBoard, id)
   end
 
+  # Adds a player to the board and waits until the player is tracked by the
+  # board before returning
   defp spawn_tracked_player(board_id, player_id) do
     ref = make_ref()
     this = self()
 
     pid =
       spawn(fn ->
-        case TrackBoard.add_player(board_id, player_id, :some_data) do
+        case Mogs.Board.add_player(TrackBoard, board_id, player_id, :some_data) do
           :ok -> :ok
-          {:error, :already_in} -> TrackBoard.track_player(board_id, player_id)
+          {:error, :already_in} -> :ok
         end
+
+        assert :ok === Mogs.Board.track_player(TrackBoard, board_id, player_id, self)
 
         send(this, {:ack, ref})
 
