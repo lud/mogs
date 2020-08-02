@@ -30,13 +30,11 @@ defmodule Mogs.Board.Command.Result do
   alias __MODULE__, as: M
 
   @accepted_keys ~w(reply error board stop)a
-  @todo "Enable from_tuple/1 ?"
-  @todo "Enable cast/1 ?"
 
   def merge(defaults, overrides) do
-    ret_defaults = return(defaults)
-    ret_overrides = return(overrides)
-    merged = Map.merge(ret_defaults, ret_overrides)
+    res_defaults = result(defaults)
+    res_overrides = result(overrides)
+    merged = Map.merge(res_defaults, res_overrides)
     struct(M, merged)
   end
 
@@ -44,34 +42,34 @@ defmodule Mogs.Board.Command.Result do
     merge(defaults, overrides)
   end
 
-  def return(%{__partial__: true} = map) do
+  def result(%{__partial__: true} = map) do
     map
   end
 
-  def return(keyword) when is_list(keyword) do
+  def result(keyword) when is_list(keyword) do
     cast_kw(%{__partial__: true}, keyword)
   end
 
-  def return(tuple) when is_tuple(tuple) do
+  def result(tuple) when is_tuple(tuple) do
     cast_tuple(tuple)
   end
 
-  def return(other) do
-    raise_bad_return(other)
+  def result(other) do
+    raise_bad_result(other)
   end
 
-  def cast_return(overrides) do
+  def cast_result(overrides) do
     merge(%{__partial__: true}, overrides)
   end
 
-  defp raise_bad_return(other) do
+  defp raise_bad_result(other) do
     raise ArgumentError, """
-    The command did not return a valid result.
+    The command did not result a valid result.
 
-    The return/1 function accepts only keywords, specific tuples, or
+    The result/1 function accepts only keywords, specific tuples, or
     result partials. Generally you will use it with a keyword such as:
 
-        return(board: board, reply: :ok)
+        result(board: board, reply: :ok)
 
     The following data was passed:
 
@@ -79,8 +77,8 @@ defmodule Mogs.Board.Command.Result do
     """
   end
 
-  def return_board(board, keyword \\ []) do
-    return([{:board, board} | keyword])
+  def result_board(board, keyword \\ []) do
+    result([{:board, board} | keyword])
   end
 
   defp cast_kw(map, [{k, v} | keyword]) do
@@ -138,6 +136,6 @@ defmodule Mogs.Board.Command.Result do
   end
 
   defp cast_tuple(other) do
-    raise_bad_return(other)
+    raise_bad_result(other)
   end
 end

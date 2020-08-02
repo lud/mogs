@@ -22,4 +22,22 @@ defmodule Mogs.TestHelper do
       end
     end
   end
+
+  defmacro suppress_callback_warnings() do
+    quote do
+      @before_compile unquote(__MODULE__)
+    end
+  end
+
+  defmacro __before_compile__(env) do
+    Mogs.Board.behaviour_info(:callbacks)
+    |> Enum.filter(fn cb -> not Module.defines?(env.module, cb) end)
+    |> Enum.map(fn {fun, arity} ->
+      quote do
+        def unquote(fun)(unquote_splicing(for(_ <- 1..arity, do: Macro.var(:_, __MODULE__)))) do
+          raise "Unimplemented callback in test in #{unquote(env.module)}"
+        end
+      end
+    end)
+  end
 end

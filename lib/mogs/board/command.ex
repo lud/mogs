@@ -15,7 +15,7 @@ defmodule Mogs.Board.Command do
   defmacro __using__(_) do
     quote do
       import Mogs.Board.Command.Result,
-        only: [return: 1, return_board: 1, return_board: 2],
+        only: [result: 1, result_board: 1, result_board: 2],
         warn: false
 
       @behaviour unquote(__MODULE__)
@@ -43,7 +43,7 @@ defmodule Mogs.Board.Command do
 
           end
 
-        It must return a Mogs.Board.Command.Result (generally using the return/1)
+        It must return a Mogs.Board.Command.Result, generally using the result/1
         function available in command modules.
         Note that any `:reply` set in this result will be ignored as timers are
         not handled within the scope of a call by the board server.
@@ -71,7 +71,7 @@ defmodule Mogs.Board.Command do
   end
 
   defp cast_result(other, called, board) do
-    reason = {:bad_return, called, other}
+    reason = {:bad_result, called, other}
     Result.merge(%{__partial__: true, board: board}, stop: reason, error: reason)
   end
 end

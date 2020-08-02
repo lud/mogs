@@ -43,8 +43,8 @@ defmodule Mogs.Board.Server do
   @impl true
   def init({mod, id, cfg, load_info}) do
     with {:ok, board} <- maybe_load_board(cfg, mod, id, load_info),
-         {:ok, tracker} <- maybe_create_tracker(cfg),
-         continuation = init_continuation(cfg, load_info) do
+         {:ok, tracker} <- maybe_create_tracker(cfg) do
+      continuation = init_continuation(cfg, load_info)
       state = struct(S, id: id, mod: mod, board: board, cfg: cfg, tracker: tracker)
       {:ok, state, continuation}
     end
@@ -213,7 +213,7 @@ defmodule Mogs.Board.Server do
 
   defp handle_result(not_a_result, state) do
     Logger.error("Command returned invalid result: #{inspect(not_a_result)}")
-    {:stop, {:bad_command_return, not_a_result}, state}
+    exit({:bad_command_return, not_a_result})
   end
 
   defp load_board(mod, id, load_info) do

@@ -2,8 +2,8 @@ use Mix.Config
 
 # config :logger,
 #   console: [format: "[$level] $message\n"],
-#   handle_sasl_reports: false,
-#   handle_otp_reports: false
+#   handle_sasl_reports: true,
+#   handle_otp_reports: true
 
 if function_exported?(Mix, :env, 0) and
      Mix.Project.get() == Mogs.MixProject and

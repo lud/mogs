@@ -8,6 +8,7 @@ defmodule Mogs.BoardTest do
 
   defmodule MyBoard do
     use Mogs.Board
+    Mogs.TestHelper.suppress_callback_warnings()
     import Mogs.Board.Command.Result
 
     def load(_id, info) do
@@ -15,15 +16,15 @@ defmodule Mogs.BoardTest do
     end
 
     def handle_command(:dummy, board) do
-      cast_return(reply: :ok, board: board)
+      cast_result(reply: :ok, board: board)
     end
 
     def handle_command(:get_the_state, board) do
-      cast_return(reply: board, board: board)
+      cast_result(reply: board, board: board)
     end
 
     def handle_command({:stop_me, reply}, _board) do
-      cast_return(reply: reply, board: :GOT_TO_STOP)
+      cast_result(reply: reply, board: :GOT_TO_STOP)
     end
 
     def handle_update(:GOT_TO_STOP) do
@@ -66,6 +67,7 @@ defmodule Mogs.BoardTest do
 
   defmodule ComBoard do
     use Mogs.Board
+    Mogs.TestHelper.suppress_callback_warnings()
     defstruct var1: nil
 
     def load(_id, load_info) do
@@ -82,7 +84,7 @@ defmodule Mogs.BoardTest do
     defstruct trans: nil
 
     def run(%{trans: fun}, board) do
-      return(board: fun.(board))
+      result(board: fun.(board))
     end
   end
 
@@ -91,7 +93,7 @@ defmodule Mogs.BoardTest do
     defstruct trans: nil
 
     def run(%{trans: fun}, board) do
-      return(reply: fun.(board))
+      result(reply: fun.(board))
     end
   end
 
@@ -109,12 +111,13 @@ defmodule Mogs.BoardTest do
     assert ["SOME", "STATE", "ATOM"] ===
              Mogs.Board.send_command(ComBoard, id, %TransformReply{trans: &String.split(&1, "_")})
 
-    # A command that does not return(board: ...) should keep the orginal board
+    # A command that does not result(board: ...) should keep the orginal board
     assert "SOME_STATE_ATOM" = Mogs.Board.get_state(ComBoard, id)
   end
 
   defmodule TimedBoard do
     use Mogs.Board
+    Mogs.TestHelper.suppress_callback_warnings()
     require Logger
     @db Mogs.BoardTest.DB
 
@@ -145,12 +148,12 @@ defmodule Mogs.BoardTest do
       board = start_timer(board, {200, :ms}, {pid, :timer_2})
       board = start_timer(board, {100, :ms}, {pid, :timer_1})
 
-      return(board: board)
+      result(board: board)
     end
 
     def handle_timer({pid, name}, board) do
       send(pid, {:handled!, name})
-      return(board: board)
+      result(board: board)
     end
   end
 
@@ -214,6 +217,7 @@ defmodule Mogs.BoardTest do
 
   defmodule AnomBoard do
     use Mogs.Board
+    Mogs.TestHelper.suppress_callback_warnings()
 
     def server_name(pid) when is_pid(pid), do: pid
     def server_name(_), do: nil
