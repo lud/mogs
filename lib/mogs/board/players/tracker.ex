@@ -6,7 +6,16 @@ defmodule Mogs.Players.Tracker do
   @default_player_timeout 30_000
 
   @opts_schema [
-    timeout: [type: :pos_integer, required: true, default: @default_player_timeout]
+    timeout: [
+      type: :pos_integer,
+      required: true,
+      default: @default_player_timeout,
+      doc: """
+      A time in milliseconds that will trigger the
+      `c:Mogs.Board.handle_remove_player/3` callback with `:timeout` as a reason
+      if a tracked player has no process alive for more that the given time. 
+      """
+    ]
   ]
 
   # - p2ms: a map from 1 player_in to N monitor_refs

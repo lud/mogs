@@ -61,7 +61,6 @@ defmodule Mogs.BoardTest do
     assert :some_state_tup = Mogs.Board.send_command(MyBoard, id, :get_the_state)
     assert true === Process.alive?(pid)
     assert :bye = Mogs.Board.send_command(MyBoard, id, {:stop_me, :bye})
-    Process.sleep(100)
     assert false === Process.alive?(pid)
   end
 

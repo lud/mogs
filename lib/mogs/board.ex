@@ -15,7 +15,9 @@ defmodule Mogs.Board do
               {:ok, board :: any} | {:stop, reason :: any}
 
   @callback handle_timer(command :: any, board :: any) :: Mogs.Board.Command.Result.t()
+
   @type board :: any
+  @type start_options :: Keyword.t()
 
   defmacro __using__(_) do
     quote do
@@ -28,38 +30,78 @@ defmodule Mogs.Board do
   @todo "validate name option format"
 
   @start_opts_schema [
-    module: [
-      type: :atom,
-      required: true
-    ],
-    id: [
-      required: true
-    ],
     name: [
-      default: nil
+      doc: """
+      Will be set as `module.server_name(id)` if not set. `c:server_name/1` can
+      return `nil` to disable process registration. 
+      """
     ],
     load_mode: [
       type: {:one_of, [:sync, :async]},
+      doc: """
+      Sets the server data initialization mode.
+          - If `:sync`, the `c:load/2` callback will be set during the board
+            initialization, before it returns to the process calling `boot/3`.
+          - If `:async`, the callback will be called afterwards.
+      """,
       default: :sync
     ],
     load_info: [
+      doc: """
+      Data that will be passed to `c:load/2` as the second argument (the first
+      argument being the `id`). It should be the minimum information required to
+      load the board data on boot, since this value will be kept in memory by
+      the supervisor to be able to restart the process in case of crash.
+      """,
       default: nil
     ],
-    timers: [type: :boolean, default: false],
+    timers: [
+      type: :boolean,
+      default: false,
+      doc: """
+      A flag that enables handling timers in the board. When `true`, the board
+      data managed by the server (initially returned by `c:load/2`) must implement
+      the `Mogs.Timers.Store` protocol.
+      """
+    ],
     tracker: [
-      required: false,
       default: nil,
       type: :non_empty_keyword_list,
-      keys: Mogs.Players.Tracker.opts_schema()
+      keys: Mogs.Players.Tracker.opts_schema(),
+      doc: """
+      Options to configure the players tracker implemented by
+      `Mogs.Players.Tracker`. Set to `nil` to disable players tracking.
+      """
     ]
   ]
 
+  @full_start_opts_schema [
+                            module: [
+                              type: :atom,
+                              required: true
+                            ],
+                            id: [
+                              required: true
+                            ]
+                          ] ++ @start_opts_schema
+
   @doc """
-  Starts a board implemented by the given module with the on the default 
-  supervisor: `Mogs.Board.Supvervisor`
+  Starts a board implemented by the given module under the default supervisor:
+  `Mogs.Board.Supvervisor`
+
+  ### Options
+
+  #{NimbleOptions.docs(@start_opts_schema)}
   """
+  @spec boot(module :: atom, id :: any, opts :: start_options()) ::
+          DynamicSupervisor.on_start_child()
   def boot(module, id, opts \\ []) when is_atom(module) and is_list(opts) do
-    name = module.server_name(id)
+    name =
+      case Keyword.fetch(opts, :name) do
+        :error -> module.server_name(id)
+        {:ok, name} -> name
+      end
+
     opts = [{:module, module}, {:id, id}, {:name, name} | opts]
 
     DynamicSupervisor.start_child(Mogs.Board.DynamicSupervisor, {__MODULE__, opts})
@@ -74,7 +116,7 @@ defmodule Mogs.Board do
   end
 
   def start_link(opts) when is_list(opts) do
-    case NimbleOptions.validate(opts, @start_opts_schema) do
+    case NimbleOptions.validate(opts, @full_start_opts_schema) do
       {:ok, opts} -> __MODULE__.Server.start_link(opts)
       other -> other
     end

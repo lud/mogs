@@ -1,6 +1,6 @@
 defmodule Mogs.Board.Callbacks do
   @moduledoc """
-  Defines a `defauts()` macro that adds default callbacks implementations to
+  Defines a `defaults()` macro that adds default callbacks implementations to
   a module.
 
   Usage
