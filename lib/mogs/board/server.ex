@@ -211,7 +211,7 @@ defmodule Mogs.Board.Server do
     end
   end
 
-  defp handle_result(not_a_result, state) do
+  defp handle_result(not_a_result, _state) do
     Logger.error("Command returned invalid result: #{inspect(not_a_result)}")
     exit({:bad_command_return, not_a_result})
   end

@@ -43,6 +43,7 @@ defmodule Mogs.Board do
           - If `:sync`, the `c:load/2` callback will be set during the board
             initialization, before it returns to the process calling `boot/3`.
           - If `:async`, the callback will be called afterwards.
+          -
       """,
       default: :sync
     ],
