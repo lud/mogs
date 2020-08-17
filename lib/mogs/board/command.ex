@@ -21,8 +21,9 @@ defmodule Mogs.Board.Command do
       @behaviour unquote(__MODULE__)
 
       # start_timer with custom "now" is not supported actually because the
-      # Mogs.Board.Server cannot know wich custom 'now()' use.
-      # That could be a callback from the board mod but that is unlikely needed.
+      # Mogs.Board.Server cannot know wich custom 'now()' use when
+      # peeking/poping. That could be a callback from the board mod but that is
+      # unlikely needed.
       @spec start_timer(Mogs.Timers.board(), Mogs.Timers.ttl(), data :: any) ::
               Mogs.Timers.board()
       defp start_timer(board, ttl, data) do
@@ -40,13 +41,13 @@ defmodule Mogs.Board.Command do
 
           @spec handle_timer(data :: any, board :: any) :: Mogs.Board.Command.Result.t()
           def handle_timer(data, board) do
-
+            # ...
           end
 
         It must return a Mogs.Board.Command.Result, generally using the result/1
         function available in command modules.
         Note that any `:reply` set in this result will be ignored as timers are
-        not handled within the scope of a call by the board server.
+        not handled within the scope of a call to the board server.
         """
       end
 

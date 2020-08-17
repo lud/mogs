@@ -35,7 +35,7 @@ defmodule Mogs.Board.Command.Result do
     res_defaults = result(defaults)
     res_overrides = result(overrides)
     merged = Map.merge(res_defaults, res_overrides)
-    struct(M, merged)
+    partial_to_struct(merged)
   end
 
   def with_defaults(overrides, defaults) do
@@ -59,7 +59,14 @@ defmodule Mogs.Board.Command.Result do
   end
 
   def cast_result(overrides) do
-    merge(%{__partial__: true}, overrides)
+    # merge(%{__partial__: true}, overrides)
+    overrides
+    |> result
+    |> partial_to_struct
+  end
+
+  defp partial_to_struct(partial) do
+    struct(M, partial)
   end
 
   defp raise_bad_result(other) do
@@ -71,7 +78,7 @@ defmodule Mogs.Board.Command.Result do
 
         result(board: board, reply: :ok)
 
-    The following data was passed:
+    The following data was given:
 
         #{inspect(other, pretty: true)}
     """
@@ -103,12 +110,12 @@ defmodule Mogs.Board.Command.Result do
     |> Map.put_new(:reply, {:error, reason})
   end
 
-  defp add(map, :stop, true) do
-    add(map, :stop, :normal)
-  end
-
   defp add(map, :stop, false) do
     Map.delete(map, :stop)
+  end
+
+  defp add(map, :stop, true) do
+    Map.put(map, :stop, {true, :normal})
   end
 
   defp add(map, :stop, reason) do

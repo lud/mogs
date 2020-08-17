@@ -53,7 +53,7 @@ defimpl Mogs.Timers.Store, for: Any do
       the key where timers must be stored:
 
         defmodule #{inspect(name)} do
-          @derive {#{inspect(@protocol)}, key: timers}
+          @derive {#{inspect(@protocol)}, key: :timers}
           defstruct timers: Mogs.Timers.new()
 
       If you don't own the struct you may use Protocol.derive/3 placed outside \

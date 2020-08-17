@@ -236,7 +236,7 @@ defmodule Mogs.Board.Server do
   # Currently we only have one function
   defp do_lifecycle(state) do
     # Syntax with multiple lifetime functions:
-    # with :unhandled <- lf_run_next_timer(state),
+    # with :unhandled <- lc_run_next_timer(state),
     #      :unhandled <- fun_2(state),
     #      :unhandled <- fun_3(state),
     #      :unhandled <- fun_4(state),
@@ -247,19 +247,19 @@ defmodule Mogs.Board.Server do
     # end
 
     # Make credo happy and use a case
-    case lf_run_next_timer(state) do
+    case lc_run_next_timer(state) do
       :unhandled -> {:noreply, state, @timeout}
       {:handled, gen_tuple_reply} -> gen_tuple_reply
     end
   end
 
-  # Lifecycle functions prefixed with "lf_"
+  # Lifecycle functions prefixed with "lc_"
 
-  defp lf_run_next_timer(%S{cfg: %Config{timers: false}}) do
+  defp lc_run_next_timer(%S{cfg: %Config{timers: false}}) do
     :unhandled
   end
 
-  defp lf_run_next_timer(%S{cfg: %Config{timers: true}} = state) do
+  defp lc_run_next_timer(%S{cfg: %Config{timers: true}} = state) do
     %S{tref: {tq_tref, erl_tref}, board: board, mod: mod} = state
 
     case Mogs.Timers.pop_timer(board) do
@@ -277,8 +277,8 @@ defmodule Mogs.Board.Server do
         :unhandled
 
       {:delay, new_tq_ref, delay} ->
-        # We will cancel the current timer as the next timequeue timer is not
-        # the previous known one. We can do it asynchronoulsy (leaving a chance
+        # We will cancel the current timer as the next TimeQueue timer is not
+        # the current known one. We can do it asynchronoulsy (leaving a chance
         # for it to trigger if it would tick just now) because if we receive it,
         # we will have a new timer ref in the state so we will ignore it anyway.
         # Also we set info to false so we do not receive a cancellation message
@@ -286,13 +286,9 @@ defmodule Mogs.Board.Server do
           :erlang.cancel_timer(erl_tref, async: true, info: false)
         end
 
-        # our message will just be to run the lifecycle.
         new_erl_tref = :erlang.start_timer(delay, self(), :run_lifecycle)
 
         {:handled, {:noreply, %S{state | tref: {new_tq_ref, new_erl_tref}}, @lifecycle}}
-
-      # now we have a new state, so we must tell the lifecycle handler that
-      # we handled something. we will just loop on the lifecycle
 
       :empty ->
         :unhandled
