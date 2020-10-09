@@ -263,8 +263,7 @@ defmodule Mogs.Board.Server do
     %S{tref: {tq_tref, erl_tref}, board: board, mod: mod} = state
 
     case Mogs.Timers.pop_timer(board) do
-      {:ok, entry, board} ->
-        timer = TimeQueue.value(entry)
+      {:ok, timer, board} ->
         result = mod.handle_timer(timer, board)
         gen_tuple = handle_result(result, %S{state | board: board})
 

@@ -2,7 +2,7 @@
   "bunt": {:hex, :bunt, "0.2.0", "951c6e801e8b1d2cbe58ebbd3e616a869061ddadcc4863d0a2182541acae9a38", [:mix], [], "hexpm", "7af5c7e09fe1d40f76c8e4f9dd2be7cebd83909f31fee7cd0e9eadc567da8353"},
   "cachex": {:hex, :cachex, "3.2.0", "a596476c781b0646e6cb5cd9751af2e2974c3e0d5498a8cab71807618b74fe2f", [:mix], [{:eternal, "~> 1.2", [hex: :eternal, repo: "hexpm", optional: false]}, {:jumper, "~> 1.0", [hex: :jumper, repo: "hexpm", optional: false]}, {:sleeplocks, "~> 1.1", [hex: :sleeplocks, repo: "hexpm", optional: false]}, {:unsafe, "~> 1.0", [hex: :unsafe, repo: "hexpm", optional: false]}], "hexpm", "aef93694067a43697ae0531727e097754a9e992a1e7946296f5969d6dd9ac986"},
   "credo": {:hex, :credo, "1.4.0", "92339d4cbadd1e88b5ee43d427b639b68a11071b6f73854e33638e30a0ea11f5", [:mix], [{:bunt, "~> 0.2.0", [hex: :bunt, repo: "hexpm", optional: false]}, {:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: false]}], "hexpm", "1fd3b70dce216574ce3c18bdf510b57e7c4c85c2ec9cad4bff854abaf7e58658"},
-  "cubdb": {:hex, :cubdb, "1.0.0-rc.3", "fc6a41d0724c5729e058367e154dd218da0e4c07ad0ca84012c5788066cf1a8b", [:mix], [], "hexpm", "f96a13bd61e3d21d5ab21bfa291e816bafb44b9d3e68c7d1f158bbb036c09c8e"},
+  "cubdb": {:hex, :cubdb, "1.0.0-rc.4", "4a1e2ea3f249299551fe3275c047dc7b3224573955bf38cead1b7605cdcb3828", [:mix], [], "hexpm", "b73bf10e0210a8410d216e199c4f60f02454180d3f1234d3aff56a5d95d18095"},
   "decompilerl": {:git, "https://github.com/niahoo/decompilerl.git", "71a6a41231bd1b1c637d20154144d08a0ecb1dbb", []},
   "dialyxir": {:hex, :dialyxir, "1.0.0", "6a1fa629f7881a9f5aaf3a78f094b2a51a0357c843871b8bc98824e7342d00a5", [:mix], [{:erlex, ">= 0.2.6", [hex: :erlex, repo: "hexpm", optional: false]}], "hexpm", "aeb06588145fac14ca08d8061a142d52753dbc2cf7f0d00fc1013f53f8654654"},
   "earmark": {:hex, :earmark, "1.4.4", "4821b8d05cda507189d51f2caeef370cf1e18ca5d7dfb7d31e9cafe6688106a4", [:mix], [], "hexpm", "1f93aba7340574847c0f609da787f0d79efcab51b044bb6e242cae5aca9d264d"},
@@ -18,7 +18,7 @@
   "nimble_options": {:hex, :nimble_options, "0.3.0", "1872911bf50a048f04da26e02704e6aeafc362c2daa7636b6dbfda9492ccfcfa", [:mix], [], "hexpm", "180790a8644fea402452bc15bb54b9bf2c8e5c1fdeb6b39d8072e59c324edf7f"},
   "nimble_parsec": {:hex, :nimble_parsec, "0.5.3", "def21c10a9ed70ce22754fdeea0810dafd53c2db3219a0cd54cf5526377af1c6", [:mix], [], "hexpm", "589b5af56f4afca65217a1f3eb3fee7e79b09c40c742fddc1c312b3ac0b3399f"},
   "sleeplocks": {:hex, :sleeplocks, "1.1.1", "3d462a0639a6ef36cc75d6038b7393ae537ab394641beb59830a1b8271faeed3", [:rebar3], [], "hexpm", "84ee37aeff4d0d92b290fff986d6a95ac5eedf9b383fadfd1d88e9b84a1c02e1"},
-  "time_queue": {:hex, :time_queue, "0.6.0", "8698714199a10c5fad773c0043cb940d04d65f697759ea382dc2a20bb9986676", [:mix], [], "hexpm", "f55c5a907986783d4c17effef24dee9084148cea57eb84852c29499126496918"},
+  "time_queue": {:hex, :time_queue, "0.9.3", "e1b577fa5ad25b0051846ce98e82aae292bc067cb4791f87ec7462c814ef669f", [:mix], [], "hexpm", "484474e3bb2ef4eae96fb33befacb78f0df3b1a612675e204e22cc73f2836b98"},
   "todo": {:hex, :todo, "1.4.1", "87ac6614ac424bb38ae6cffce4f8cf75090713167f5872ac522ce765cea6e8f7", [:mix], [], "hexpm", "22685abbf1581141c9f8c1b5fc348d633076b9a6b688e61d665eb0e31a1a6483"},
   "unsafe": {:hex, :unsafe, "1.0.1", "a27e1874f72ee49312e0a9ec2e0b27924214a05e3ddac90e91727bc76f8613d8", [:mix], [], "hexpm", "6c7729a2d214806450d29766abc2afaa7a2cbecf415be64f36a6691afebb50e5"},
 }

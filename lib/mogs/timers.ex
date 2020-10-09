@@ -6,8 +6,8 @@ defmodule Mogs.Timers do
   @type t :: TimeQueue.t()
   @type timer :: term
   @type ttl :: TimeQueue.ttl()
-  @type pop_return :: TimeQueue.pop_return(board)
-  @type enqueue_return :: TimeQueue.enqueue_return(board)
+  @type pop_return :: TimeQueue.pop_return()
+  @type enqueue_return :: TimeQueue.enqueue_return()
 
   @doc """
   Returns an empty timers structure to initialize timers in a board. This

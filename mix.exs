@@ -38,11 +38,11 @@ defmodule Mogs.MixProject do
   defp deps do
     [
       # Deps
-      {:time_queue, ">= 0.6.0"},
+      {:time_queue, "~> 0.9.3"},
       {:nimble_options, "~> 0.3.0"},
 
       # Test Deps
-      {:cubdb, "~> 1.0.0-rc3", only: [:test]},
+      {:cubdb, "~> 1.0.0-rc.4", only: [:test]},
 
       # Utils
       {:inch_ex, "~> 2.0", only: [:dev]},

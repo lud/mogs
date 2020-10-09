@@ -31,8 +31,7 @@ defmodule Mogs.TimersTest do
     assert :empty === Timers.pop_timer(board)
     assert {:ok, _, board} = Timers.enqueue_timer(board, {1, :ms}, timer)
     Process.sleep(50)
-    assert {:ok, popped, board} = Timers.pop_timer(board)
-    assert timer === TimeQueue.value(popped)
+    assert {:ok, timer, board} = Timers.pop_timer(board)
     assert :empty === Timers.pop_timer(board)
   end
 end
